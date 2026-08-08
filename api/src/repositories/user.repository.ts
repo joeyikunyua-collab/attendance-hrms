@@ -40,4 +40,10 @@ export const userRepository = {
     if (excludeUserId) filter._id = { $ne: excludeUserId };
     return User.find(filter).select("_id").lean<{ _id: unknown }[]>();
   },
+
+  findAll(excludeUserId?: string) {
+    const filter: Record<string, unknown> = {};
+    if (excludeUserId) filter._id = { $ne: excludeUserId };
+    return User.find(filter).select("_id").lean<{ _id: unknown }[]>();
+  },
 };

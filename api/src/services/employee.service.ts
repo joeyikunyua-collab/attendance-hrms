@@ -30,8 +30,30 @@ async function generateEmployeeId(): Promise<string> {
   return `EMP${String(counter.seq).padStart(4, "0")}`;
 }
 
+/**
+ * Employee documents written before the status/hireDate/officeLocation/
+ * manager/employmentType/photoUrl fields existed don't have them in the DB -
+ * Mongoose's schema `default` only applies to newly-created documents, not
+ * retroactively to old ones, and `.lean()` reads skip the hydration step
+ * that would otherwise paper over that. Normalize here so every response
+ * is well-formed regardless of when the record was created.
+ */
+function normalize<T extends { active: boolean; status?: string }>(employee: T) {
+  return {
+    ...employee,
+    status: employee.status ?? (employee.active ? "active" : "inactive"),
+    dateOfBirth: (employee as { dateOfBirth?: unknown }).dateOfBirth ?? null,
+    hireDate: (employee as { hireDate?: unknown }).hireDate ?? null,
+    officeLocation: (employee as { officeLocation?: unknown }).officeLocation ?? "",
+    manager: (employee as { manager?: unknown }).manager ?? null,
+    employmentType: (employee as { employmentType?: unknown }).employmentType ?? "full_time",
+    photoUrl: (employee as { photoUrl?: unknown }).photoUrl ?? null,
+  };
+}
+
 async function list() {
-  return employeeRepository.findAllSorted();
+  const employees = await employeeRepository.findAllSorted();
+  return employees.map(normalize);
 }
 
 async function me(userId: string) {
@@ -39,7 +61,7 @@ async function me(userId: string) {
   if (!employee) {
     throw new ApiError(404, "No employee record is linked to this account");
   }
-  return employee;
+  return normalize(employee);
 }
 
 async function create(
@@ -52,12 +74,35 @@ async function create(
     department?: string;
     designation?: string;
     role?: string;
+    dateOfBirth?: string;
+    hireDate?: string;
+    officeLocation?: string;
+    manager?: string | null;
+    employmentType?: string;
+    photoUrl?: string | null;
   }
 ) {
-  const { firstName, middleName, lastName, workEmail, department, designation, role } = body;
+  const {
+    firstName,
+    middleName,
+    lastName,
+    workEmail,
+    department,
+    designation,
+    role,
+    dateOfBirth,
+    hireDate,
+    officeLocation,
+    manager,
+    employmentType,
+    photoUrl,
+  } = body;
 
   if (!firstName || !lastName || !workEmail) {
     throw new ApiError(400, "First name, last name and work email are required");
+  }
+  if (!hireDate || !officeLocation) {
+    throw new ApiError(400, "Hire date and office location are required");
   }
 
   const normalizedRole = role === "admin" ? "admin" : "staff";
@@ -119,6 +164,13 @@ async function create(
           designation: designation ? String(designation).trim() : "",
           role: normalizedRole,
           user: loginUser._id,
+          status: "pending_onboarding",
+          dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+          hireDate: new Date(hireDate),
+          officeLocation: String(officeLocation).trim(),
+          manager: manager || null,
+          employmentType: (employmentType as never) || "full_time",
+          photoUrl: photoUrl || null,
         } as never);
         break;
       } catch (err: any) {
@@ -173,12 +225,38 @@ async function update(
     designation?: string;
     role?: string;
     active?: boolean;
+    status?: "pending_onboarding" | "active" | "inactive" | "suspended";
+    dateOfBirth?: string | null;
+    hireDate?: string;
+    officeLocation?: string;
+    manager?: string | null;
+    employmentType?: string;
+    photoUrl?: string | null;
   }
 ) {
-  const { firstName, middleName, lastName, department, designation, role, active } = body;
+  const {
+    firstName,
+    middleName,
+    lastName,
+    department,
+    designation,
+    role,
+    active,
+    status,
+    dateOfBirth,
+    hireDate,
+    officeLocation,
+    manager,
+    employmentType,
+    photoUrl,
+  } = body;
 
   const existing = await employeeRepository.findById(id);
   if (!existing) throw new ApiError(404, "Employee not found");
+
+  if (manager && manager === id) {
+    throw new ApiError(400, "An employee can't be their own manager");
+  }
 
   const wasActive = existing.active;
 
@@ -188,7 +266,27 @@ async function update(
   if (department !== undefined) existing.department = String(department).trim();
   if (designation !== undefined) existing.designation = String(designation).trim();
   if (role !== undefined) existing.role = role === "admin" ? "admin" : "staff";
-  if (active !== undefined) existing.active = Boolean(active);
+  if (dateOfBirth !== undefined) existing.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+  if (hireDate !== undefined) existing.hireDate = hireDate ? new Date(hireDate) : null;
+  if (officeLocation !== undefined) existing.officeLocation = String(officeLocation).trim();
+  if (manager !== undefined) existing.manager = (manager || null) as never;
+  if (employmentType !== undefined) existing.employmentType = employmentType as never;
+  if (photoUrl !== undefined) existing.photoUrl = photoUrl || null;
+
+  // `status` is the authoritative lifecycle field going forward; a bare
+  // `active` boolean (from older/simpler callers) is still honored by
+  // mapping it onto the nearest equivalent status.
+  if (status !== undefined) {
+    existing.status = status;
+    existing.active = status === "active" || status === "pending_onboarding";
+  } else if (active !== undefined) {
+    existing.active = Boolean(active);
+    existing.status = existing.active
+      ? existing.status === "pending_onboarding"
+        ? "pending_onboarding"
+        : "active"
+      : "inactive";
+  }
 
   if (firstName !== undefined || middleName !== undefined || lastName !== undefined) {
     existing.name = [existing.firstName, existing.middleName, existing.lastName]
@@ -216,17 +314,24 @@ async function update(
   return existing;
 }
 
+async function celebrations() {
+  const employees = await employeeRepository.findCelebrationFields();
+  return employees.map((e) => ({ ...e, dateOfBirth: e.dateOfBirth ?? null, hireDate: e.hireDate ?? null }));
+}
+
 async function remove(id: string) {
   const employee = await employeeRepository.findByIdAndDelete(id);
   if (!employee) throw new ApiError(404, "Employee not found");
   if (employee.user) {
     await userRepository.findByIdAndDelete(employee.user.toString());
   }
+  await employeeRepository.clearManagerReferences(id);
 }
 
 export const employeeService = {
   list,
   me,
+  celebrations,
   create,
   update,
   remove,

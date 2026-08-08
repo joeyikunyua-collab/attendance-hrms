@@ -16,8 +16,20 @@ async function unreadCount(req: Request, res: Response) {
   res.status(200).json({ count });
 }
 
+async function nudge(req: Request, res: Response) {
+  await notificationService.nudgeEmployee(req.params.employeeId);
+  res.status(201).json({ ok: true });
+}
+
+async function sendWish(req: Request, res: Response) {
+  await notificationService.sendCelebrationWish(req.params.employeeId, req.body.message);
+  res.status(201).json({ ok: true });
+}
+
 export const notificationController = {
   list,
   markRead,
   unreadCount,
+  nudge,
+  sendWish,
 };

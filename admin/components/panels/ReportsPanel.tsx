@@ -1,11 +1,43 @@
 import { useEffect, useMemo, useState } from "react";
-import { SearchField, Group, Input, Label } from "react-aria-components";
-import LocationModal, { EyeIcon } from "@/components/LocationModal";
-import DateFilterField, { dateGroupClass } from "@/components/DateFilterField";
-import { TableSkeletonRows } from "@/components/Skeleton";
-import { employeeRefName } from "@/lib/employeeRef";
+import { addToast } from "@heroui/react";
+import {
+  Search,
+  Building2,
+  Download,
+  FileText,
+  CalendarClock,
+  ListChecks,
+  CheckCircle2,
+  Clock3,
+  AlertTriangle,
+  ArrowRight,
+} from "lucide-react";
 import api from "@/lib/axios";
-import type { AttendanceRecord, AuthUser } from "@/types";
+import { getErrorMessage } from "@/lib/errors";
+import { employeeRefName } from "@/lib/employeeRef";
+import { dateGroupClass } from "@/components/DateFilterField";
+import { TableSkeletonRows } from "@/components/Skeleton";
+import Avatar from "@/components/panels/attendance/dashboard/Avatar";
+import AttendanceAnalytics from "@/components/panels/attendance/dashboard/AttendanceAnalytics";
+import MetricCard from "@/components/panels/attendance/dashboard/MetricCard";
+import Pagination from "@/components/panels/attendance/dashboard/Pagination";
+import DateRangeField from "@/components/panels/attendance/dashboard/DateRangeField";
+import AuditDrawer from "@/components/panels/attendance/dashboard/AuditDrawer";
+import ManualTimeEntryModal from "@/components/panels/attendance/dashboard/ManualTimeEntryModal";
+import {
+  displayStatus,
+  durationMinutes,
+  formatDuration,
+  formatMinutes,
+  formatTime,
+  OVERTIME_THRESHOLD_MINUTES,
+} from "@/components/panels/attendance/dashboard/statusUtils";
+import type { DisplayStatus } from "@/components/panels/attendance/dashboard/StatusBadge";
+import ComplianceBadge from "@/components/panels/reports/ComplianceBadge";
+import ScheduleDeliveryModal from "@/components/panels/reports/ScheduleDeliveryModal";
+import type { AttendanceRecord, AuthUser, Employee } from "@/types";
+
+const PAGE_SIZE = 10;
 
 function daysAgo(n: number) {
   const d = new Date();
@@ -13,225 +45,502 @@ function daysAgo(n: number) {
   return d.toISOString().slice(0, 10);
 }
 
-function formatDateTime(iso: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-const STATUS_BADGE_CLASS: Record<string, string> = {
-  present: "bg-green-100 text-green-700",
-  late: "bg-amber-100 text-amber-700",
-  absent: "bg-red-100 text-red-700",
-};
+/** The immediately-preceding period of the same length, for the "vs last
+ * period" completion-rate trend - e.g. Aug 01-08 compares against Jul 24-31. */
+function previousPeriod(from: string, to: string) {
+  const fromDate = new Date(`${from}T00:00:00`);
+  const toDate = new Date(`${to}T00:00:00`);
+  const rangeDays = Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) + 1;
+  const prevTo = new Date(fromDate);
+  prevTo.setDate(prevTo.getDate() - 1);
+  const prevFrom = new Date(prevTo);
+  prevFrom.setDate(prevFrom.getDate() - (rangeDays - 1));
+  return { prevFrom: prevFrom.toISOString().slice(0, 10), prevTo: prevTo.toISOString().slice(0, 10) };
+}
 
-const PAGE_SIZE = 20;
+const STATUS_FILTER_OPTIONS: { value: DisplayStatus | ""; label: string }[] = [
+  { value: "", label: "All statuses" },
+  { value: "present", label: "Completed" },
+  { value: "incomplete", label: "Missing Check-out" },
+  { value: "overtime", label: "Overtime" },
+];
 
 export default function ReportsPanel({ user }: { user: AuthUser }) {
-  const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [total, setTotal] = useState(0);
-  const [fetching, setFetching] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [locationRecord, setLocationRecord] = useState<AttendanceRecord | null>(null);
+  const isAdmin = user.role === "admin";
 
-  const [search, setSearch] = useState("");
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [from, setFrom] = useState(daysAgo(7));
-  const [to, setTo] = useState(daysAgo(0));
+  const [to, setTo] = useState(todayStr());
+  const [search, setSearch] = useState("");
+  const [department, setDepartment] = useState("");
+  const [statusFilter, setStatusFilter] = useState<DisplayStatus | "">("");
 
-  function runSearch() {
-    setFetching(true);
-    api
-      .get<{ records: AttendanceRecord[]; total: number }>("/attendance", {
-        params: { from, to, limit: PAGE_SIZE, skip: 0 },
+  const [rangeRecords, setRangeRecords] = useState<AttendanceRecord[]>([]);
+  const [prevRangeRecords, setPrevRangeRecords] = useState<AttendanceRecord[]>([]);
+  const [fetchingRange, setFetchingRange] = useState(true);
+
+  const [pageRecords, setPageRecords] = useState<AttendanceRecord[]>([]);
+  const [pageTotal, setPageTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [fetchingPage, setFetchingPage] = useState(true);
+
+  const [drawerTarget, setDrawerTarget] = useState<{ id: string; name: string; date: string; record: AttendanceRecord } | null>(
+    null
+  );
+  const [manualEntryOpen, setManualEntryOpen] = useState(false);
+  const [manualEntryPrefill, setManualEntryPrefill] = useState<{ employeeId?: string; date?: string }>({});
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+
+  function loadRange(rangeFrom: string, rangeTo: string) {
+    setFetchingRange(true);
+    const { prevFrom, prevTo } = previousPeriod(rangeFrom, rangeTo);
+    Promise.all([
+      api.get<{ records: AttendanceRecord[] }>("/attendance", { params: { from: rangeFrom, to: rangeTo } }),
+      api.get<{ records: AttendanceRecord[] }>("/attendance", { params: { from: prevFrom, to: prevTo } }),
+    ])
+      .then(([curRes, prevRes]) => {
+        setRangeRecords(curRes.data.records);
+        setPrevRangeRecords(prevRes.data.records);
       })
-      .then((res) => {
-        setRecords(res.data.records);
-        setTotal(res.data.total);
-      })
-      .finally(() => setFetching(false));
+      .finally(() => setFetchingRange(false));
   }
 
-  function loadMore() {
-    setLoadingMore(true);
+  function loadPage(targetPage: number, rangeFrom = from, rangeTo = to) {
+    setFetchingPage(true);
     api
       .get<{ records: AttendanceRecord[]; total: number }>("/attendance", {
-        params: { from, to, limit: PAGE_SIZE, skip: records.length },
+        params: { from: rangeFrom, to: rangeTo, limit: PAGE_SIZE, skip: (targetPage - 1) * PAGE_SIZE },
       })
       .then((res) => {
-        setRecords((prev) => [...prev, ...res.data.records]);
-        setTotal(res.data.total);
+        setPageRecords(res.data.records);
+        setPageTotal(res.data.total ?? 0);
+        setPage(targetPage);
       })
-      .finally(() => setLoadingMore(false));
+      .finally(() => setFetchingPage(false));
   }
 
   useEffect(() => {
-    runSearch();
+    if (isAdmin) {
+      api.get<{ employees: Employee[] }>("/employees").then((res) => setEmployees(res.data.employees));
+    }
+    loadRange(from, to);
+    loadPage(1, from, to);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return records;
-    return records.filter((r) => {
-      const name = typeof r.employee === "string" ? "" : employeeRefName(r.employee);
-      return name.toLowerCase().includes(query);
-    });
-  }, [records, search]);
+  const departments = useMemo(
+    () => Array.from(new Set(employees.map((e) => e.department).filter(Boolean))).sort(),
+    [employees]
+  );
 
-  const isAdmin = user.role === "admin";
-  const columnCount = isAdmin ? 6 : 4;
+  const matchesSearchAndDept = (r: AttendanceRecord) => {
+    const name = employeeRefName(r.employee);
+    const dept = typeof r.employee === "object" && r.employee ? r.employee.department : "";
+    const query = search.trim().toLowerCase();
+    if (query && !name.toLowerCase().includes(query) && !dept.toLowerCase().includes(query)) return false;
+    if (department && dept !== department) return false;
+    return true;
+  };
+  const matchesFilters = (r: AttendanceRecord) =>
+    matchesSearchAndDept(r) && (!statusFilter || displayStatus(r) === statusFilter);
+
+  const filteredRange = useMemo(() => rangeRecords.filter(matchesFilters), [rangeRecords, search, department, statusFilter]);
+  // Status filter deliberately excluded from the comparison baseline - it narrows *this* view, not the population
+  // the trend is measured against, so "vs last period" stays a like-for-like completion-rate comparison.
+  const filteredPrevRange = useMemo(
+    () => prevRangeRecords.filter(matchesSearchAndDept),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [prevRangeRecords, search, department]
+  );
+  const filteredPage = useMemo(() => pageRecords.filter(matchesFilters), [pageRecords, search, department, statusFilter]);
+
+  const completionRate = (records: AttendanceRecord[]) =>
+    records.length ? (records.filter((r) => r.checkIn && r.checkOut).length / records.length) * 100 : 0;
+
+  const totalShiftRecords = filteredRange.length;
+  const currentCompletionRate = completionRate(filteredRange);
+  const prevCompletionRate = completionRate(filteredPrevRange);
+  const loggedOvertimeMinutes = useMemo(
+    () =>
+      filteredRange.reduce((sum, r) => {
+        const minutes = durationMinutes(r.checkIn, r.checkOut);
+        return minutes && minutes > OVERTIME_THRESHOLD_MINUTES ? sum + (minutes - OVERTIME_THRESHOLD_MINUTES) : sum;
+      }, 0),
+    [filteredRange]
+  );
+  const missingCheckouts = useMemo(
+    () => filteredRange.filter((r) => displayStatus(r) === "incomplete").length,
+    [filteredRange]
+  );
+
+  function openDrawer(record: AttendanceRecord) {
+    setDrawerTarget({ id: record._id, name: employeeRefName(record.employee), date: record.date, record });
+  }
+
+  function openManualEntryFromDrawer() {
+    if (!drawerTarget) return;
+    setManualEntryPrefill({
+      employeeId: typeof drawerTarget.record.employee === "object" ? drawerTarget.record.employee?._id : undefined,
+      date: drawerTarget.date,
+    });
+    setDrawerTarget(null);
+    setManualEntryOpen(true);
+  }
+
+  function refreshAll() {
+    loadRange(from, to);
+    loadPage(page, from, to);
+    setDrawerTarget(null);
+  }
+
+  function buildExportRows() {
+    return filteredRange.map((r) => ({
+      date: r.date,
+      name: employeeRefName(r.employee),
+      id: typeof r.employee === "object" && r.employee ? r.employee.employeeId : "",
+      checkIn: formatTime(r.checkIn),
+      checkOut: formatTime(r.checkOut),
+      duration: formatDuration(r.checkIn, r.checkOut),
+      status: displayStatus(r),
+    }));
+  }
+
+  function exportCsv() {
+    const rows = buildExportRows();
+    const header = ["Date", "Employee", "ID", "Check-in", "Check-out", "Duration", "Status"];
+    const lines = rows.map((r) =>
+      [r.date, r.name, r.id, r.checkIn, r.checkOut, r.duration, r.status]
+        .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+        .join(",")
+    );
+    const csv = [header.join(","), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `attendance-report-${from}-to-${to}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    addToast({ title: "Export ready", description: `${rows.length} rows downloaded as CSV.`, severity: "success" });
+  }
+
+  function exportPdf() {
+    const rows = buildExportRows();
+    const win = window.open("", "_blank");
+    if (!win) {
+      addToast({ title: "Pop-up blocked", description: "Allow pop-ups to export a PDF.", severity: "danger" });
+      return;
+    }
+    win.document.write(`
+      <html>
+        <head>
+          <title>Attendance Report ${from} to ${to}</title>
+          <style>
+            body { font-family: -apple-system, Arial, sans-serif; padding: 24px; color: #0f172a; }
+            h1 { font-size: 18px; margin-bottom: 4px; }
+            p { color: #64748b; font-size: 12px; margin-top: 0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+            th, td { text-align: left; padding: 6px 10px; font-size: 12px; border-bottom: 1px solid #e2e8f0; }
+            th { text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-size: 10px; }
+          </style>
+        </head>
+        <body>
+          <h1>Attendance Report</h1>
+          <p>${from} to ${to}</p>
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Employee</th><th>ID</th><th>Check-in</th><th>Check-out</th><th>Duration</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              ${rows
+                .map(
+                  (r) =>
+                    `<tr><td>${r.date}</td><td>${r.name}</td><td>${r.id}</td><td>${r.checkIn}</td><td>${r.checkOut}</td><td>${r.duration}</td><td>${r.status}</td></tr>`
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
+    addToast({
+      title: "Print dialog opened",
+      description: "Choose \"Save as PDF\" as the destination to export.",
+      severity: "success",
+    });
+  }
+
+  const columnCount = 7;
 
   return (
-    <div>
-      <h1 className="text-xl font-semibold text-slate-800 mb-6">
-        {isAdmin ? "Attendance History" : "My Attendance History"}
-      </h1>
-
-      <div className="bg-white border border-slate-200 rounded-lg p-4 mb-6 flex flex-wrap gap-4 items-end">
-        {isAdmin && (
-          <SearchField value={search} onChange={setSearch} aria-label="Search by employee name" className="w-64">
-            <Label className="block text-xs text-slate-500 mb-1">Search employee</Label>
-            <Group className={dateGroupClass}>
-              <svg
-                className="w-4 h-4 text-slate-400 shrink-0"
-                viewBox="0 0 20 20"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <circle cx="9" cy="9" r="6" />
-                <path d="M17 17l-4-4" strokeLinecap="round" />
-              </svg>
-              <Input placeholder="Search..." className="flex-1 outline-none" />
-            </Group>
-          </SearchField>
-        )}
-
-        <DateFilterField label="From" value={from} onChange={setFrom} />
-        <DateFilterField label="To" value={to} onChange={setTo} />
-
-        <button
-          onClick={runSearch}
-          className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md px-4 py-1.5"
-        >
-          Search
-        </button>
-      </div>
-
-      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-left border-b border-slate-200">
-            <tr>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide">Date</th>
-              {isAdmin && (
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide">Employee</th>
-              )}
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide">Check-in</th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide">Check-out</th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide">Status</th>
-              {isAdmin && <th className="px-4 py-3"></th>}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {fetching ? (
-              <TableSkeletonRows columns={columnCount} />
-            ) : filteredRecords.length === 0 ? (
-              <tr>
-                <td className="px-4 py-6 text-center text-slate-500" colSpan={columnCount}>
-                  No records found for this filter.
-                </td>
-              </tr>
-            ) : (
-              filteredRecords.map((r) => {
-                const hasLocation =
-                  (r.checkInLatitude !== null && r.checkInLongitude !== null) ||
-                  (r.checkOutLatitude !== null && r.checkOutLongitude !== null);
-                return (
-                  <tr key={r._id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 text-slate-600">{r.date}</td>
-                    {isAdmin && (
-                      <td className="px-4 py-3 font-medium text-slate-800">
-                        {typeof r.employee === "string" ? r.employee : employeeRefName(r.employee)}
-                      </td>
-                    )}
-                    <td className="px-4 py-3 text-slate-600">{formatDateTime(r.checkIn)}</td>
-                    <td className="px-4 py-3 text-slate-600">{formatDateTime(r.checkOut)}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
-                          STATUS_BADGE_CLASS[r.status] ?? "bg-slate-100 text-slate-500"
-                        }`}
-                      >
-                        {r.status}
-                      </span>
-                    </td>
-                    {isAdmin && (
-                      <td className="px-4 py-3 text-right">
-                        {hasLocation && (
-                          <button
-                            onClick={() => setLocationRecord(r)}
-                            title="View location"
-                            aria-label="View location"
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                          >
-                            <EyeIcon className="w-4 h-4" />
-                          </button>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {!fetching && records.length > 0 && !search.trim() && (
-        <div className="flex items-center justify-between mt-3">
-          <p className="text-xs text-slate-500">
-            Showing {records.length} of {total} record{total === 1 ? "" : "s"}
+    <div className="bg-[#F8FAFC] -m-4 p-4 sm:-m-6 sm:p-6 rounded-2xl">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">Attendance Audit &amp; Historical Reports</h1>
+          <p className="text-xs font-normal text-slate-500 mt-0.5">
+            Generate compliance logs, inspect shift anomalies, and export payroll records.
           </p>
-          {records.length < total && (
+        </div>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={exportPdf}
+            className="inline-flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-medium px-3.5 py-2 rounded-lg"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Export PDF
+          </button>
+          <button
+            type="button"
+            onClick={exportCsv}
+            className="inline-flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-medium px-3.5 py-2 rounded-lg"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </button>
+          {isAdmin && (
             <button
-              onClick={loadMore}
-              disabled={loadingMore}
-              className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-60 border border-blue-200 rounded-md px-3 py-1.5"
+              type="button"
+              onClick={() => setScheduleOpen(true)}
+              className="inline-flex items-center gap-1.5 bg-blue-600 text-white hover:bg-blue-700 text-xs font-medium px-3.5 py-2 rounded-lg shadow-sm"
             >
-              {loadingMore ? "Loading..." : "Load more"}
+              <CalendarClock className="w-3.5 h-3.5" />
+              Schedule Automatic Delivery
             </button>
           )}
         </div>
+      </div>
+
+      {/* KPI grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <MetricCard
+          label="Total Shift Records"
+          value={fetchingRange ? "—" : totalShiftRecords}
+          helperText="Current range"
+          icon={ListChecks}
+          tone="blue"
+        />
+        <MetricCard
+          label="Completion Rate"
+          value={fetchingRange ? "—" : `${currentCompletionRate.toFixed(1)}%`}
+          trend={fetchingRange ? undefined : { value: currentCompletionRate - prevCompletionRate, label: "vs last period" }}
+          icon={CheckCircle2}
+          tone="emerald"
+        />
+        <MetricCard
+          label="Logged Overtime"
+          value={fetchingRange ? "—" : formatMinutes(loggedOvertimeMinutes)}
+          icon={Clock3}
+          tone="slate"
+        />
+        <MetricCard
+          label="Flagged Exceptions"
+          value={fetchingRange ? "—" : missingCheckouts}
+          helperText={!fetchingRange && missingCheckouts > 0 ? `${missingCheckouts} Missing Check-out${missingCheckouts === 1 ? "" : "s"}` : undefined}
+          icon={AlertTriangle}
+          tone="red"
+        />
+      </div>
+
+      {/* Charts - admin only: department/company-wide breakdowns aren't
+          meaningful (and /employees 403s) for a staff member's own history */}
+      {isAdmin && (
+        <div className="mb-6">
+          <AttendanceAnalytics />
+        </div>
       )}
 
-      {locationRecord && (
-        <LocationModal
-          isOpen
-          onClose={() => setLocationRecord(null)}
-          title={
-            (typeof locationRecord.employee === "string"
-              ? locationRecord.employee
-              : employeeRefName(locationRecord.employee)) + ` · ${locationRecord.date}`
-          }
-          entries={[
-            {
-              label: "Check-in",
-              time: formatDateTime(locationRecord.checkIn),
-              latitude: locationRecord.checkInLatitude,
-              longitude: locationRecord.checkInLongitude,
-            },
-            {
-              label: "Check-out",
-              time: formatDateTime(locationRecord.checkOut),
-              latitude: locationRecord.checkOutLatitude,
-              longitude: locationRecord.checkOutLongitude,
-            },
-          ]}
+      {/* Table container */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-end gap-3 p-4 border-b border-slate-200/80">
+          {isAdmin && (
+            <div className="w-72 max-w-full">
+              <label className="block text-xs text-slate-500 mb-1" htmlFor="report-search">
+                Search
+              </label>
+              <div className={dateGroupClass}>
+                <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                <input
+                  id="report-search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search employee name, ID, or location..."
+                  className="flex-1 outline-none bg-transparent text-sm"
+                />
+              </div>
+            </div>
+          )}
+
+          {isAdmin && (
+            <div className="w-44">
+              <label className="block text-xs text-slate-500 mb-1" htmlFor="report-department">
+                Department
+              </label>
+              <div className={dateGroupClass}>
+                <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
+                <select
+                  id="report-department"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  className="flex-1 outline-none bg-transparent text-sm text-slate-700"
+                >
+                  <option value="">All Departments</option>
+                  {departments.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          <div className="w-48">
+            <label className="block text-xs text-slate-500 mb-1" htmlFor="report-status">
+              Status
+            </label>
+            <div className={dateGroupClass}>
+              <select
+                id="report-status"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as DisplayStatus | "")}
+                className="flex-1 outline-none bg-transparent text-sm text-slate-700"
+              >
+                {STATUS_FILTER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="ml-auto">
+            <DateRangeField
+              from={from}
+              to={to}
+              onApply={(newFrom, newTo) => {
+                setFrom(newFrom);
+                setTo(newTo);
+                loadRange(newFrom, newTo);
+                loadPage(1, newFrom, newTo);
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50/80 border-b border-slate-200 text-left">
+              <tr>
+                <th className="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Date</th>
+                <th className="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Employee</th>
+                <th className="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Check-In</th>
+                <th className="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Check-Out</th>
+                <th className="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Total Duration</th>
+                <th className="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Compliance</th>
+                <th className="py-2.5 px-4"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {fetchingPage ? (
+                <TableSkeletonRows columns={columnCount} />
+              ) : filteredPage.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-10 text-center text-slate-500" colSpan={columnCount}>
+                    No records match the current filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredPage.map((r) => {
+                  const name = employeeRefName(r.employee);
+                  const role = typeof r.employee === "object" && r.employee ? r.employee.designation : "";
+                  const code = typeof r.employee === "object" && r.employee ? r.employee.employeeId : "";
+                  return (
+                    <tr key={r._id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="px-4 py-3 font-mono tabular-nums text-xs text-slate-500">{r.date}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <Avatar name={name} size="sm" />
+                          <div className="min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => openDrawer(r)}
+                              className="block text-sm font-medium text-slate-900 hover:text-blue-600 truncate"
+                            >
+                              {name}
+                            </button>
+                            <p className="text-[11px] text-slate-400 truncate">
+                              {role || "—"} <span className="font-mono">· {code}</span>
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-xs text-slate-700">{formatTime(r.checkIn)}</td>
+                      <td className={`px-4 py-3 font-mono tabular-nums text-xs ${r.checkOut ? "text-slate-700" : "text-slate-400"}`}>
+                        {formatTime(r.checkOut)}
+                      </td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-xs font-semibold text-slate-800">
+                        {formatDuration(r.checkIn, r.checkOut)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <ComplianceBadge status={displayStatus(r)} />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => openDrawer(r)}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-blue-600"
+                        >
+                          Inspect Logs
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <Pagination page={page} pageSize={PAGE_SIZE} total={pageTotal} onPageChange={(p) => loadPage(p)} />
+      </div>
+
+      <AuditDrawer
+        open={!!drawerTarget}
+        onClose={() => setDrawerTarget(null)}
+        employeeName={drawerTarget?.name ?? ""}
+        date={drawerTarget?.date ?? ""}
+        record={drawerTarget?.record ?? null}
+        onResolved={refreshAll}
+        onAddManualEntry={openManualEntryFromDrawer}
+        canResolve={isAdmin}
+      />
+
+      {isAdmin && (
+        <ManualTimeEntryModal
+          isOpen={manualEntryOpen}
+          onClose={() => setManualEntryOpen(false)}
+          employees={employees.filter((e) => e.active)}
+          onSaved={refreshAll}
+          initialEmployeeId={manualEntryPrefill.employeeId}
+          initialDate={manualEntryPrefill.date}
         />
+      )}
+
+      {isAdmin && (
+        <ScheduleDeliveryModal isOpen={scheduleOpen} onClose={() => setScheduleOpen(false)} onSaved={() => setScheduleOpen(false)} />
       )}
     </div>
   );

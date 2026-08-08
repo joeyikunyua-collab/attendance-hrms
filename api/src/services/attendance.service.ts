@@ -54,7 +54,8 @@ async function list(
 
 async function checkIn(
   user: AuthUser,
-  body: { date?: string; status?: string; latitude?: unknown; longitude?: unknown; accuracy?: unknown }
+  body: { date?: string; status?: string; latitude?: unknown; longitude?: unknown; accuracy?: unknown },
+  ip: string | null
 ) {
   const ownEmployeeId = await resolveOwnEmployeeId(user);
   if (!ownEmployeeId) {
@@ -75,6 +76,7 @@ async function checkIn(
       checkInLatitude: typeof latitude === "number" ? latitude : null,
       checkInLongitude: typeof longitude === "number" ? longitude : null,
       checkInAccuracy: typeof accuracy === "number" ? accuracy : null,
+      checkInIp: ip,
       status: (status as never) ?? "present",
     });
   } catch (err: any) {
@@ -121,7 +123,8 @@ function assertOwnsOrAdmin(record: { employee: unknown }, user: AuthUser) {
 async function checkOut(
   user: AuthUser,
   id: string,
-  body: { action?: string; latitude?: unknown; longitude?: unknown; accuracy?: unknown }
+  body: { action?: string; latitude?: unknown; longitude?: unknown; accuracy?: unknown },
+  ip: string | null
 ) {
   const record = await attendanceRepository.findById(id);
   if (!record) throw new ApiError(404, "Attendance record not found");
@@ -141,6 +144,7 @@ async function checkOut(
   record.checkOutLatitude = typeof latitude === "number" ? latitude : null;
   record.checkOutLongitude = typeof longitude === "number" ? longitude : null;
   record.checkOutAccuracy = typeof accuracy === "number" ? accuracy : null;
+  record.checkOutIp = ip;
   await record.save();
 
   const checkOutTime = record.checkOut.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -171,6 +175,48 @@ async function remove(user: AuthUser, id: string) {
   }
 
   await attendanceRepository.findByIdAndDelete(id);
+}
+
+/** Admin-only correction/backfill tool: creates the day's record for an
+ * employee if none exists yet, or overwrites it if one does - unlike
+ * checkIn/checkOut (which only ever act on the caller's own record and
+ * always use "now"), this lets an admin set an arbitrary date/time on
+ * someone else's behalf. No geolocation fields are set (there's no device
+ * fix behind a manual entry). */
+async function manualUpsert(body: {
+  employeeId: string;
+  date: string;
+  checkIn?: string | null;
+  checkOut?: string | null;
+  status?: "present" | "late" | "absent";
+}) {
+  const employee = await employeeRepository.findByIdLean(body.employeeId);
+  if (!employee) {
+    throw new ApiError(404, "Employee not found");
+  }
+
+  return attendanceRepository.upsertManual(body.employeeId, body.date, {
+    checkIn: body.checkIn ? new Date(body.checkIn) : null,
+    checkOut: body.checkOut ? new Date(body.checkOut) : null,
+    ...(body.status ? { status: body.status } : {}),
+  });
+}
+
+/** Admin acknowledgment of an exception-queue entry (missing checkout,
+ * absence, overtime, etc). Deliberately does NOT alter the underlying
+ * check-in/out facts or status - it only layers an audit note + resolved
+ * timestamp on top, so the record stays a truthful account of what actually
+ * happened while still letting the queue stop re-surfacing it. */
+async function resolveException(admin: AuthUser, id: string, auditNote: string | null) {
+  const record = await attendanceRepository.findById(id);
+  if (!record) throw new ApiError(404, "Attendance record not found");
+
+  record.auditNote = auditNote;
+  record.resolvedAt = new Date();
+  record.resolvedBy = admin.id as never;
+  await record.save();
+
+  return record;
 }
 
 async function checkinReminder(user: AuthUser) {
@@ -206,5 +252,7 @@ export const attendanceService = {
   checkIn,
   checkOut,
   remove,
+  manualUpsert,
+  resolveException,
   checkinReminder,
 };

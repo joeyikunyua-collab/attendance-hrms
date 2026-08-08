@@ -64,6 +64,7 @@ async function setPassword(user: AuthUser, newPassword: string) {
     passwordHash,
     mustChangePassword: false,
   });
+  await employeeRepository.completeOnboardingForUser(user.id);
 
   if (user.mustChangePassword) {
     await notificationService.notifyAdmins({

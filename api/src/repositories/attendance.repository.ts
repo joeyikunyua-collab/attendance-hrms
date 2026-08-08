@@ -29,4 +29,15 @@ export const attendanceRepository = {
       .select("checkIn")
       .lean<{ checkIn: Date | null } | null>();
   },
+
+  /** Creates or overwrites the one record for this employee/date - used by
+   * the admin "manual time entry" tool, which corrects/backfills a specific
+   * day rather than recording a live check-in/out. */
+  upsertManual(employeeId: string, date: string, fields: Partial<AttendanceDocument>) {
+    return Attendance.findOneAndUpdate(
+      { employee: employeeId, date },
+      { $set: { employee: employeeId, date, ...fields } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).populate("employee");
+  },
 };

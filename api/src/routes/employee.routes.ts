@@ -7,8 +7,9 @@ import { asyncHandler } from "../utils/asyncHandler";
 
 const router = Router();
 
-// Declared before "/:id" so the literal "me" path isn't swallowed by the param route.
+// Declared before "/:id" so literal paths aren't swallowed by the param route.
 router.get("/me", requireUser, asyncHandler(employeeController.me));
+router.get("/celebrations", requireUser, asyncHandler(employeeController.celebrations));
 router.get("/", requireAdmin, asyncHandler(employeeController.list));
 router.post(
   "/",

@@ -5,6 +5,9 @@ import EmployeeDayDetailModal from "@/components/EmployeeDayDetailModal";
 import NavTabs from "@/components/NavTabs";
 import { Skeleton, TableSkeletonRows } from "@/components/Skeleton";
 import AttendancePanel from "@/components/panels/AttendancePanel";
+import AttendanceAnalytics from "@/components/panels/attendance/dashboard/AttendanceAnalytics";
+import AnnouncementsFeed from "@/components/panels/announcements/AnnouncementsFeed";
+import CelebrationsWidget from "@/components/panels/celebrations/CelebrationsWidget";
 import EmployeesPanel from "@/components/panels/EmployeesPanel";
 import ReportsPanel from "@/components/panels/ReportsPanel";
 import LoginActivityPanel from "@/components/panels/LoginActivityPanel";
@@ -13,7 +16,7 @@ import api from "@/lib/axios";
 import { ADMIN_NAV_LINKS, STAFF_NAV_LINKS } from "@/lib/navLinks";
 import { todayStr, addDays, generateDateRange, getWeekDates, isWeekend, toDateStr, laterDateStr } from "@/lib/dates";
 import { employeeRefId } from "@/lib/employeeRef";
-import type { AttendanceRecord, Employee } from "@/types";
+import type { AttendanceRecord, AuthUser, Employee } from "@/types";
 
 function weekdayLabel(date: string) {
   return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: "long" });
@@ -93,7 +96,7 @@ function StatCard({
   );
 }
 
-function AdminDashboard() {
+function AdminDashboard({ user }: { user: AuthUser }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -184,6 +187,13 @@ function AdminDashboard() {
 
   return (
     <>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <div className="lg:col-span-2">
+          <AnnouncementsFeed user={user} />
+        </div>
+        <CelebrationsWidget />
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard
           label="Active employees"
@@ -206,6 +216,10 @@ function AdminDashboard() {
           icon="clock"
           loading={initialLoading}
         />
+      </div>
+
+      <div className="mb-6">
+        <AttendanceAnalytics />
       </div>
 
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
@@ -313,7 +327,7 @@ function AdminDashboard() {
   );
 }
 
-function StaffDashboard({ name, onGoToAttendance }: { name: string; onGoToAttendance: () => void }) {
+function StaffDashboard({ user, onGoToAttendance }: { user: AuthUser; onGoToAttendance: () => void }) {
   const [weekRecords, setWeekRecords] = useState<AttendanceRecord[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [joinDate, setJoinDate] = useState<string | null>(null);
@@ -367,7 +381,7 @@ function StaffDashboard({ name, onGoToAttendance }: { name: string; onGoToAttend
     <div className="space-y-6">
       <div className="bg-white border border-slate-200 rounded-lg p-6 max-w-md">
         <p className="text-sm text-slate-500 mb-1">Welcome back</p>
-        <h2 className="text-lg font-semibold text-slate-800 mb-4">{name}</h2>
+        <h2 className="text-lg font-semibold text-slate-800 mb-4">{user.name}</h2>
         {initialLoading ? (
           <>
             <Skeleton className="h-4 w-40 mb-1" />
@@ -390,6 +404,13 @@ function StaffDashboard({ name, onGoToAttendance }: { name: string; onGoToAttend
         >
           Go to My Attendance
         </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2">
+          <AnnouncementsFeed user={user} />
+        </div>
+        <CelebrationsWidget />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -436,9 +457,9 @@ export default function DashboardPage() {
           <h1 className="text-xl font-semibold text-slate-800 mb-1">Dashboard</h1>
           <p className="text-sm text-slate-500 mb-4">{new Date().toDateString()}</p>
           {user.role === "admin" ? (
-            <AdminDashboard />
+            <AdminDashboard user={user} />
           ) : (
-            <StaffDashboard name={user.name} onGoToAttendance={() => setActiveTab("attendance")} />
+            <StaffDashboard user={user} onGoToAttendance={() => setActiveTab("attendance")} />
           )}
         </>
       )}

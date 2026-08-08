@@ -2,7 +2,14 @@ import mongoose, { Schema, models, model } from "mongoose";
 
 export interface NotificationDocument extends mongoose.Document {
   recipient: mongoose.Types.ObjectId;
-  type: "employee_created" | "password_changed" | "checked_in" | "checked_out" | "checkin_reminder";
+  type:
+    | "employee_created"
+    | "password_changed"
+    | "checked_in"
+    | "checked_out"
+    | "checkin_reminder"
+    | "announcement_posted"
+    | "celebration_wish";
   title: string;
   body: string;
   read: boolean;
@@ -16,7 +23,15 @@ const NotificationSchema = new Schema<NotificationDocument>({
   recipient: { type: Schema.Types.ObjectId, ref: "User", required: true },
   type: {
     type: String,
-    enum: ["employee_created", "password_changed", "checked_in", "checked_out", "checkin_reminder"],
+    enum: [
+      "employee_created",
+      "password_changed",
+      "checked_in",
+      "checked_out",
+      "checkin_reminder",
+      "announcement_posted",
+      "celebration_wish",
+    ],
     required: true,
   },
   title: { type: String, required: true },

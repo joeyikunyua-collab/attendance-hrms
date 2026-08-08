@@ -11,6 +11,11 @@ async function me(req: Request, res: Response) {
   res.status(200).json({ employee });
 }
 
+async function celebrations(_req: Request, res: Response) {
+  const employees = await employeeService.celebrations();
+  res.status(200).json({ employees });
+}
+
 async function create(req: Request, res: Response) {
   const result = await employeeService.create(req.user!, req.body);
   res.status(201).json(result);
@@ -29,6 +34,7 @@ async function remove(req: Request, res: Response) {
 export const employeeController = {
   list,
   me,
+  celebrations,
   create,
   update,
   remove,

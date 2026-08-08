@@ -26,7 +26,7 @@ export interface LocationEntry {
   longitude: number | null;
 }
 
-function osmEmbedUrl(lat: number, lng: number) {
+export function osmEmbedUrl(lat: number, lng: number) {
   const delta = 0.01;
   const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
   return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&marker=${lat},${lng}`;

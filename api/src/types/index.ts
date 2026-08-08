@@ -11,4 +11,6 @@ export type NotificationType =
   | "password_changed"
   | "checked_in"
   | "checked_out"
-  | "checkin_reminder";
+  | "checkin_reminder"
+  | "announcement_posted"
+  | "celebration_wish";
