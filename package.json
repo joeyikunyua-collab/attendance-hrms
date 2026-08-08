@@ -1,0 +1,43 @@
+{
+  "name": "attendance-system",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "seed:admin": "ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" scripts/createAdmin.ts"
+  },
+  "dependencies": {
+    "@fullcalendar/core": "6.1.21",
+    "@fullcalendar/daygrid": "6.1.21",
+    "@fullcalendar/interaction": "6.1.21",
+    "@fullcalendar/react": "6.1.21",
+    "@heroui/react": "^2.8.10",
+    "@internationalized/date": "3.12.3",
+    "axios": "^1.7.9",
+    "bcryptjs": "^2.4.3",
+    "cookie": "^0.7.2",
+    "framer-motion": "^12.43.0",
+    "jose": "^5.9.6",
+    "mongoose": "^8.9.5",
+    "next": "14.2.21",
+    "react": "^18.3.1",
+    "react-aria-components": "1.20.0",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie": "^0.6.0",
+    "@types/node": "^20.17.10",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "autoprefixer": "^10.4.20",
+    "dotenv": "^16.4.7",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}
