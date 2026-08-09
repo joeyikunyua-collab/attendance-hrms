@@ -94,7 +94,10 @@ export type NotificationType =
   | "checked_out"
   | "checkin_reminder"
   | "announcement_posted"
-  | "celebration_wish";
+  | "celebration_wish"
+  | "leave_request_submitted"
+  | "leave_request_manager_approved"
+  | "leave_request_reviewed";
 
 export interface Notification {
   _id: string;
@@ -114,7 +117,9 @@ export interface ReportSchedule {
   createdAt: string;
 }
 
-export type AnnouncementCategory = "company_update" | "policy" | "event";
+/** Free-form key matching one of `SystemSettings.announcementCategories` at
+ * post time - not a fixed union, since admins can add/remove categories. */
+export type AnnouncementCategory = string;
 
 export interface Announcement {
   _id: string;
@@ -124,6 +129,9 @@ export interface Announcement {
   pinned: boolean;
   authorId: string;
   authorName: string;
+  authorDesignation: string;
+  acknowledgedCount: number;
+  acknowledgedByMe: boolean;
   createdAt: string;
 }
 
@@ -135,4 +143,89 @@ export interface CelebrationEmployee {
   photoUrl: string | null;
   dateOfBirth: string | null;
   hireDate: string | null;
+}
+
+/** Free-form key matching one of `SystemSettings.leaveTypes` at request
+ * time - not a fixed union, since admins can add/remove leave types. */
+export type LeaveType = string;
+export type LeaveRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+/** Whose turn it is to act while `status === "pending"`. */
+export type LeaveApprovalStage = "manager" | "admin" | "done";
+
+export interface LeaveRequestEmployeeRef {
+  _id: string;
+  name: string;
+  employeeId: string;
+  department: string;
+  photoUrl: string | null;
+}
+
+export interface LeaveRequest {
+  _id: string;
+  employee: LeaveRequestEmployeeRef;
+  type: LeaveType;
+  startDate: string;
+  endDate: string;
+  totalDays: number;
+  reason: string;
+  status: LeaveRequestStatus;
+  approvalStage: LeaveApprovalStage;
+  managerDecision: "approved" | "rejected" | null;
+  managerReviewedBy: string | null;
+  managerReviewedAt: string | null;
+  managerNote: string | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+/** Per-leave-type balance for the current calendar year, from
+ * GET /leave-requests/balance. `remaining: null` means unlimited. */
+export interface LeaveBalance {
+  key: string;
+  label: string;
+  annualQuota: number | null;
+  paid: boolean;
+  used: number;
+  remaining: number | null;
+}
+
+export interface AnnouncementCategoryConfig {
+  key: string;
+  label: string;
+}
+
+export interface LeaveTypeConfig {
+  key: string;
+  label: string;
+  annualQuota: number | null;
+  paid: boolean;
+}
+
+export type LeaveApprovalFlow = "admin_only" | "manager_only" | "manager_then_admin";
+
+/** GET /settings - full shape for admins. Non-admins get the same shape
+ * minus `defaultEmployeePassword` (omitted server-side, never sent). */
+export interface SystemSettings {
+  companyName: string;
+  companyLogoUrl: string | null;
+  overtimeThresholdMinutes: number;
+  weekendDays: number[];
+  checkInReminderStart: string;
+  checkInReminderEnd: string;
+  defaultEmployeePassword?: string;
+  minPasswordLength: number;
+  officeLocations: string[];
+  announcementCategories: AnnouncementCategoryConfig[];
+  leaveTypes: LeaveTypeConfig[];
+  leaveApprovalFlow: LeaveApprovalFlow;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+/** GET /settings/public - unauthenticated, branding only (used pre-login). */
+export interface PublicSettings {
+  companyName: string;
+  companyLogoUrl: string | null;
 }

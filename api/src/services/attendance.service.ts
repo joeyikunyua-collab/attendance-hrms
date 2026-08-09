@@ -1,6 +1,7 @@
 import { attendanceRepository } from "../repositories/attendance.repository";
 import { employeeRepository } from "../repositories/employee.repository";
 import { notificationRepository } from "../repositories/notification.repository";
+import { settingsRepository } from "../repositories/settings.repository";
 import { notificationService } from "./notification.service";
 import { todayStr, isWeekend, checkInReminderSlot } from "../utils/dates";
 import { ApiError } from "../utils/ApiError";
@@ -223,11 +224,13 @@ async function checkinReminder(user: AuthUser) {
   const employee = await employeeRepository.findByUserSelectId(user.id);
   if (!employee) return { created: false }; // admins / unlinked accounts: quiet no-op
 
-  const today = todayStr();
-  if (isWeekend(today)) return { created: false };
+  const { weekendDays, checkInReminderStart, checkInReminderEnd } = await settingsRepository.getLean();
 
-  const slot = checkInReminderSlot(new Date());
-  if (!slot) return { created: false }; // outside 9:00-12:00
+  const today = todayStr();
+  if (isWeekend(today, weekendDays)) return { created: false };
+
+  const slot = checkInReminderSlot(new Date(), checkInReminderStart, checkInReminderEnd);
+  if (!slot) return { created: false }; // outside the configured reminder window
 
   const attendance = await attendanceRepository.findOneByEmployeeAndDate(employee._id, today);
   if (attendance?.checkIn) return { created: false }; // already checked in

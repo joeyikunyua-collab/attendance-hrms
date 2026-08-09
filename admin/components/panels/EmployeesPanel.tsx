@@ -12,6 +12,7 @@ import EmployeeStatusBadge from "@/components/panels/employees/EmployeeStatusBad
 import { dateGroupClass } from "@/components/DateFilterField";
 import api from "@/lib/axios";
 import { getErrorMessage } from "@/lib/errors";
+import { useSettings } from "@/lib/SettingsContext";
 import type { Employee, EmployeeCredentials, EmployeeStatus, EmploymentType } from "@/types";
 
 function todayStr() {
@@ -76,6 +77,7 @@ function FormField({
 }
 
 export default function EmployeesPanel() {
+  const { settings } = useSettings();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [fetching, setFetching] = useState(true);
 
@@ -529,13 +531,40 @@ export default function EmployeesPanel() {
                     value={form.designation}
                     onChange={(v) => updateField("designation", v)}
                   />
-                  <FormField
-                    label="Office location"
-                    placeholder="Nairobi HQ"
-                    isRequired
-                    value={form.officeLocation}
-                    onChange={(v) => updateField("officeLocation", v)}
-                  />
+                  {settings.officeLocations.length > 0 ? (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-800 mb-1">
+                        Office location<span className="text-red-500 ml-0.5">*</span>
+                      </label>
+                      <select
+                        value={form.officeLocation}
+                        onChange={(e) => updateField("officeLocation", e.target.value)}
+                        className={inputClass}
+                      >
+                        <option value="" disabled>
+                          Select a location...
+                        </option>
+                        {settings.officeLocations.map((loc) => (
+                          <option key={loc} value={loc}>
+                            {loc}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <FormField
+                        label="Office location"
+                        placeholder="Nairobi HQ"
+                        isRequired
+                        value={form.officeLocation}
+                        onChange={(v) => updateField("officeLocation", v)}
+                      />
+                      <p className="text-[11px] text-amber-600 mt-1">
+                        No locations configured yet - add them in Settings for a dropdown here.
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-slate-800 mb-1">
                       Direct manager<span className="text-red-500 ml-0.5">*</span>

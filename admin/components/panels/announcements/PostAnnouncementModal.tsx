@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, addToast } from "@heroui/react";
 import api from "@/lib/axios";
 import { getErrorMessage } from "@/lib/errors";
+import { useSettings } from "@/lib/SettingsContext";
 import type { Announcement, AnnouncementCategory } from "@/types";
 
 const inputClass =
@@ -17,17 +18,24 @@ export default function PostAnnouncementModal({
   onClose: () => void;
   onPosted: () => void;
 }) {
+  const { settings } = useSettings();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [category, setCategory] = useState<AnnouncementCategory>("company_update");
+  const [category, setCategory] = useState<AnnouncementCategory>("");
   const [pinned, setPinned] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const defaultCategory = settings.announcementCategories[0]?.key ?? "";
+
+  useEffect(() => {
+    if (!category && defaultCategory) setCategory(defaultCategory);
+  }, [category, defaultCategory]);
+
   function reset() {
     setTitle("");
     setBody("");
-    setCategory("company_update");
+    setCategory(defaultCategory);
     setPinned(false);
     setError(null);
   }
@@ -87,10 +95,12 @@ export default function PostAnnouncementModal({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-800 mb-1">Category</label>
-                <select value={category} onChange={(e) => setCategory(e.target.value as AnnouncementCategory)} className={inputClass}>
-                  <option value="company_update">Company Update</option>
-                  <option value="policy">Policy</option>
-                  <option value="event">Event</option>
+                <select value={category} onChange={(e) => setCategory(e.target.value)} className={inputClass}>
+                  {settings.announcementCategories.map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="flex items-end pb-2">

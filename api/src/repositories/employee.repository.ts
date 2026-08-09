@@ -36,6 +36,29 @@ export const employeeRepository = {
     return Employee.findOne({ user: userId }).select("_id").lean<{ _id: unknown } | null>();
   },
 
+  findByUserSelectIdAndManager(userId: string) {
+    return Employee.findOne({ user: userId })
+      .select("_id manager")
+      .lean<{ _id: unknown; manager: unknown } | null>();
+  },
+
+  findByIdSelectManager(id: string) {
+    return Employee.findById(id).select("manager").lean<{ manager: unknown } | null>();
+  },
+
+  /** Direct reports of a given manager - used to route leave-approval
+   * queues to the right manager. */
+  findByManager(managerId: string) {
+    return Employee.find({ manager: managerId }).select("_id").lean<{ _id: unknown }[]>();
+  },
+
+  /** Distinct set of office locations already in use, to seed Settings the
+   * first time an admin opens the Locations editor (before that, admins
+   * only see whatever they've explicitly configured). */
+  distinctOfficeLocations() {
+    return Employee.distinct("officeLocation", { officeLocation: { $ne: "" } });
+  },
+
   /** Flips an employee out of "pending onboarding" once they've actually
    * set their own password - a no-op if they'd already been moved to some
    * other status (e.g. an admin suspended them before they ever logged in),

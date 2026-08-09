@@ -4,6 +4,7 @@ import { X, MapPin, Globe, CheckCircle2, PlusCircle, Clock } from "lucide-react"
 import api from "@/lib/axios";
 import { getErrorMessage } from "@/lib/errors";
 import { osmEmbedUrl } from "@/components/LocationModal";
+import { useSettings } from "@/lib/SettingsContext";
 import type { AttendanceRecord } from "@/types";
 import StatusBadge from "./StatusBadge";
 import { displayStatus, formatTime, formatDuration } from "./statusUtils";
@@ -83,6 +84,7 @@ export default function AuditDrawer({
    * anyway - this just avoids showing a control that would just 403). */
   canResolve?: boolean;
 }) {
+  const { settings } = useSettings();
   const [note, setNote] = useState(record?.auditNote ?? "");
   const [submitting, setSubmitting] = useState(false);
 
@@ -108,7 +110,7 @@ export default function AuditDrawer({
     }
   }
 
-  const status = displayStatus(record);
+  const status = displayStatus(record, settings.overtimeThresholdMinutes);
   const isException = status !== "present";
 
   return (

@@ -15,6 +15,7 @@ import {
 import api from "@/lib/axios";
 import { getErrorMessage } from "@/lib/errors";
 import { employeeRefName } from "@/lib/employeeRef";
+import { useSettings } from "@/lib/SettingsContext";
 import { dateGroupClass } from "@/components/DateFilterField";
 import { TableSkeletonRows } from "@/components/Skeleton";
 import Avatar from "@/components/panels/attendance/dashboard/Avatar";
@@ -30,7 +31,6 @@ import {
   formatDuration,
   formatMinutes,
   formatTime,
-  OVERTIME_THRESHOLD_MINUTES,
 } from "@/components/panels/attendance/dashboard/statusUtils";
 import type { DisplayStatus } from "@/components/panels/attendance/dashboard/StatusBadge";
 import ComplianceBadge from "@/components/panels/reports/ComplianceBadge";
@@ -71,6 +71,8 @@ const STATUS_FILTER_OPTIONS: { value: DisplayStatus | ""; label: string }[] = [
 
 export default function ReportsPanel({ user }: { user: AuthUser }) {
   const isAdmin = user.role === "admin";
+  const { settings } = useSettings();
+  const overtimeThresholdMinutes = settings.overtimeThresholdMinutes;
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [from, setFrom] = useState(daysAgo(7));
@@ -146,9 +148,12 @@ export default function ReportsPanel({ user }: { user: AuthUser }) {
     return true;
   };
   const matchesFilters = (r: AttendanceRecord) =>
-    matchesSearchAndDept(r) && (!statusFilter || displayStatus(r) === statusFilter);
+    matchesSearchAndDept(r) && (!statusFilter || displayStatus(r, overtimeThresholdMinutes) === statusFilter);
 
-  const filteredRange = useMemo(() => rangeRecords.filter(matchesFilters), [rangeRecords, search, department, statusFilter]);
+  const filteredRange = useMemo(
+    () => rangeRecords.filter(matchesFilters),
+    [rangeRecords, search, department, statusFilter, overtimeThresholdMinutes]
+  );
   // Status filter deliberately excluded from the comparison baseline - it narrows *this* view, not the population
   // the trend is measured against, so "vs last period" stays a like-for-like completion-rate comparison.
   const filteredPrevRange = useMemo(
@@ -156,7 +161,10 @@ export default function ReportsPanel({ user }: { user: AuthUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [prevRangeRecords, search, department]
   );
-  const filteredPage = useMemo(() => pageRecords.filter(matchesFilters), [pageRecords, search, department, statusFilter]);
+  const filteredPage = useMemo(
+    () => pageRecords.filter(matchesFilters),
+    [pageRecords, search, department, statusFilter, overtimeThresholdMinutes]
+  );
 
   const completionRate = (records: AttendanceRecord[]) =>
     records.length ? (records.filter((r) => r.checkIn && r.checkOut).length / records.length) * 100 : 0;
@@ -168,13 +176,13 @@ export default function ReportsPanel({ user }: { user: AuthUser }) {
     () =>
       filteredRange.reduce((sum, r) => {
         const minutes = durationMinutes(r.checkIn, r.checkOut);
-        return minutes && minutes > OVERTIME_THRESHOLD_MINUTES ? sum + (minutes - OVERTIME_THRESHOLD_MINUTES) : sum;
+        return minutes && minutes > overtimeThresholdMinutes ? sum + (minutes - overtimeThresholdMinutes) : sum;
       }, 0),
-    [filteredRange]
+    [filteredRange, overtimeThresholdMinutes]
   );
   const missingCheckouts = useMemo(
-    () => filteredRange.filter((r) => displayStatus(r) === "incomplete").length,
-    [filteredRange]
+    () => filteredRange.filter((r) => displayStatus(r, overtimeThresholdMinutes) === "incomplete").length,
+    [filteredRange, overtimeThresholdMinutes]
   );
 
   function openDrawer(record: AttendanceRecord) {
@@ -205,7 +213,7 @@ export default function ReportsPanel({ user }: { user: AuthUser }) {
       checkIn: formatTime(r.checkIn),
       checkOut: formatTime(r.checkOut),
       duration: formatDuration(r.checkIn, r.checkOut),
-      status: displayStatus(r),
+      status: displayStatus(r, overtimeThresholdMinutes),
     }));
   }
 
@@ -494,7 +502,7 @@ export default function ReportsPanel({ user }: { user: AuthUser }) {
                         {formatDuration(r.checkIn, r.checkOut)}
                       </td>
                       <td className="px-4 py-3">
-                        <ComplianceBadge status={displayStatus(r)} />
+                        <ComplianceBadge status={displayStatus(r, overtimeThresholdMinutes)} />
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button

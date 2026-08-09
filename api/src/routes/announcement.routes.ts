@@ -14,6 +14,7 @@ router.post(
   validate(createAnnouncementSchema),
   asyncHandler(announcementController.create)
 );
+router.post("/:id/acknowledge", requireUser, asyncHandler(announcementController.acknowledge));
 router.delete("/:id", requireAdmin, asyncHandler(announcementController.remove));
 
 export default router;

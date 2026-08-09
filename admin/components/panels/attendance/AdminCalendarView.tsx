@@ -6,10 +6,12 @@ import type { DatesSetArg, EventClickArg, EventInput } from "@fullcalendar/core"
 import api from "@/lib/axios";
 import { toDateStr, todayStr, generateDateRange, isWeekend, hasJoinedBy } from "@/lib/dates";
 import { employeeRefId } from "@/lib/employeeRef";
+import { useSettings } from "@/lib/SettingsContext";
 import PresentAbsentListModal from "./PresentAbsentListModal";
 import type { AttendanceRecord, Employee } from "@/types";
 
 export default function AdminCalendarView() {
+  const { settings } = useSettings();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [range, setRange] = useState<{ start: string; end: string } | null>(null);
@@ -67,7 +69,7 @@ export default function AdminCalendarView() {
       }
       // Weekends aren't expected workdays, so an empty one isn't "absence" -
       // only flag it if someone actually showed up (already handled above).
-      if (absentCount > 0 && !isWeekend(date)) {
+      if (absentCount > 0 && !isWeekend(date, settings.weekendDays)) {
         evts.push({
           id: `${date}-absent`,
           title: `${absentCount} absent`,
@@ -81,7 +83,7 @@ export default function AdminCalendarView() {
       }
     }
     return evts;
-  }, [range, presentByDate, employees, today]);
+  }, [range, presentByDate, employees, today, settings.weekendDays]);
 
   function handleDatesSet(arg: DatesSetArg) {
     const endDate = new Date(arg.end);

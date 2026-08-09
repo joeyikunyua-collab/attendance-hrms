@@ -5,10 +5,12 @@ import interactionPlugin from "@fullcalendar/interaction";
 import type { DatesSetArg, EventClickArg, EventInput } from "@fullcalendar/core";
 import api from "@/lib/axios";
 import { toDateStr, todayStr, generateDateRange, isWeekend, hasJoinedBy } from "@/lib/dates";
+import { useSettings } from "@/lib/SettingsContext";
 import DayActivityModal from "./DayActivityModal";
 import type { AttendanceRecord, Employee } from "@/types";
 
 export default function StaffCalendarView() {
+  const { settings } = useSettings();
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [range, setRange] = useState<{ start: string; end: string } | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -42,7 +44,7 @@ export default function StaffCalendarView() {
       if (date > today) continue;
       if (!hasJoinedBy(me.createdAt, date)) continue; // before this employee existed
       const present = !!recordByDate.get(date)?.checkIn;
-      if (!present && isWeekend(date)) continue; // not an expected workday - no badge either way
+      if (!present && isWeekend(date, settings.weekendDays)) continue; // not an expected workday - no badge either way
       evts.push({
         id: date,
         title: present ? "Present" : "Absent",
@@ -55,7 +57,7 @@ export default function StaffCalendarView() {
       });
     }
     return evts;
-  }, [range, recordByDate, today, me]);
+  }, [range, recordByDate, today, me, settings.weekendDays]);
 
   function handleDatesSet(arg: DatesSetArg) {
     const endDate = new Date(arg.end);

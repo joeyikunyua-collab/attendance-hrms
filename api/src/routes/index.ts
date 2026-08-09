@@ -6,6 +6,8 @@ import loginEventRoutes from "./loginEvent.routes";
 import notificationRoutes from "./notification.routes";
 import reportScheduleRoutes from "./reportSchedule.routes";
 import announcementRoutes from "./announcement.routes";
+import leaveRequestRoutes from "./leaveRequest.routes";
+import settingsRoutes from "./settings.routes";
 
 const router = Router();
 
@@ -16,5 +18,7 @@ router.use("/login-events", loginEventRoutes);
 router.use("/notifications", notificationRoutes);
 router.use("/report-schedules", reportScheduleRoutes);
 router.use("/announcements", announcementRoutes);
+router.use("/leave-requests", leaveRequestRoutes);
+router.use("/settings", settingsRoutes);
 
 export default router;

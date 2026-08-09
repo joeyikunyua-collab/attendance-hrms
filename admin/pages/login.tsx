@@ -1,7 +1,8 @@
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { useRouter } from "next/router";
 import axios from "axios";
 import api from "@/lib/axios";
+import type { PublicSettings } from "@/types";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -9,6 +10,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [branding, setBranding] = useState<PublicSettings>({ companyName: "Attendance System", companyLogoUrl: null });
+
+  useEffect(() => {
+    api
+      .get<{ settings: PublicSettings }>("/settings/public")
+      .then((res) => setBranding(res.data.settings))
+      .catch(() => {});
+  }, []);
 
   function recordLoginLocation(loginEventId: string) {
     if (!navigator.geolocation) {
@@ -59,7 +68,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-sm bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
-        <h1 className="text-lg font-semibold text-slate-800 mb-1">Attendance System</h1>
+        <h1 className="text-lg font-semibold text-slate-800 mb-1">{branding.companyName}</h1>
         <p className="text-sm text-slate-500 mb-6">Sign in to continue</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">

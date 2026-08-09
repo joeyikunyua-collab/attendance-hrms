@@ -18,7 +18,8 @@ import { TrendingUp } from "lucide-react";
 import api from "@/lib/axios";
 import { employeeRefId } from "@/lib/employeeRef";
 import { addDays, generateDateRange, getWeekDates, isWeekend, toDateStr } from "@/lib/dates";
-import { durationMinutes, OVERTIME_THRESHOLD_MINUTES } from "./statusUtils";
+import { useSettings } from "@/lib/SettingsContext";
+import { durationMinutes } from "./statusUtils";
 import type { AttendanceRecord, Employee } from "@/types";
 
 type RangeKey = "thisWeek" | "lastWeek" | "thisMonth";
@@ -113,6 +114,8 @@ function DepartmentTooltip({ active, payload }: any) {
  * Reports module without either page needing to share fetch/filter state
  * with it. */
 export default function AttendanceAnalytics() {
+  const { settings } = useSettings();
+  const { overtimeThresholdMinutes, weekendDays } = settings;
   const [rangeKey, setRangeKey] = useState<RangeKey>("thisWeek");
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -146,8 +149,8 @@ export default function AttendanceAnalytics() {
   }, [records]);
 
   const weekdaysInRange = useMemo(
-    () => generateDateRange(from, to).filter((d) => !isWeekend(d)),
-    [from, to]
+    () => generateDateRange(from, to).filter((d) => !isWeekend(d, weekendDays)),
+    [from, to, weekendDays]
   );
 
   const trendData = useMemo(
@@ -176,9 +179,9 @@ export default function AttendanceAnalytics() {
         for (const r of dayRecords) {
           const minutes = durationMinutes(r.checkIn, r.checkOut);
           if (minutes === null) continue;
-          if (minutes > OVERTIME_THRESHOLD_MINUTES) {
-            workedMinutes += OVERTIME_THRESHOLD_MINUTES;
-            overtimeMinutes += minutes - OVERTIME_THRESHOLD_MINUTES;
+          if (minutes > overtimeThresholdMinutes) {
+            workedMinutes += overtimeThresholdMinutes;
+            overtimeMinutes += minutes - overtimeThresholdMinutes;
           } else {
             workedMinutes += minutes;
           }
@@ -189,7 +192,7 @@ export default function AttendanceAnalytics() {
           Overtime: overtimeMinutes / 60,
         };
       }),
-    [weekdaysInRange, recordsByDate]
+    [weekdaysInRange, recordsByDate, overtimeThresholdMinutes]
   );
 
   const departmentData = useMemo(() => {

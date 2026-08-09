@@ -45,9 +45,9 @@ export function getWeekDates(): string[] {
   });
 }
 
-export function isWeekend(dateStr: string): boolean {
+export function isWeekend(dateStr: string, weekendDays: number[] = [0, 6]): boolean {
   const day = new Date(`${dateStr}T00:00:00`).getDay();
-  return day === 0 || day === 6;
+  return weekendDays.includes(day);
 }
 
 /** True once `date` is on or after the day the employee's record was created,

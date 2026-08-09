@@ -1,19 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useRouter } from "next/router";
 import Layout from "@/components/Layout";
 import DateFilterField from "@/components/DateFilterField";
 import EmployeeDayDetailModal from "@/components/EmployeeDayDetailModal";
-import NavTabs from "@/components/NavTabs";
 import { Skeleton, TableSkeletonRows } from "@/components/Skeleton";
-import AttendancePanel from "@/components/panels/AttendancePanel";
 import AttendanceAnalytics from "@/components/panels/attendance/dashboard/AttendanceAnalytics";
 import AnnouncementsFeed from "@/components/panels/announcements/AnnouncementsFeed";
 import CelebrationsWidget from "@/components/panels/celebrations/CelebrationsWidget";
-import EmployeesPanel from "@/components/panels/EmployeesPanel";
-import ReportsPanel from "@/components/panels/ReportsPanel";
-import LoginActivityPanel from "@/components/panels/LoginActivityPanel";
 import { useAuth } from "@/lib/useAuth";
+import { useSettings } from "@/lib/SettingsContext";
 import api from "@/lib/axios";
-import { ADMIN_NAV_LINKS, STAFF_NAV_LINKS } from "@/lib/navLinks";
 import { todayStr, addDays, generateDateRange, getWeekDates, isWeekend, toDateStr, laterDateStr } from "@/lib/dates";
 import { employeeRefId } from "@/lib/employeeRef";
 import type { AttendanceRecord, AuthUser, Employee } from "@/types";
@@ -328,6 +324,7 @@ function AdminDashboard({ user }: { user: AuthUser }) {
 }
 
 function StaffDashboard({ user, onGoToAttendance }: { user: AuthUser; onGoToAttendance: () => void }) {
+  const { settings } = useSettings();
   const [weekRecords, setWeekRecords] = useState<AttendanceRecord[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [joinDate, setJoinDate] = useState<string | null>(null);
@@ -367,7 +364,7 @@ function StaffDashboard({ user, onGoToAttendance }: { user: AuthUser; onGoToAtte
     : null;
 
   const weekStart = joinDate ? laterDateStr(getWeekDates()[0], joinDate) : getWeekDates()[0];
-  const daysElapsed = generateDateRange(weekStart, today).filter((d) => !isWeekend(d)).length;
+  const daysElapsed = generateDateRange(weekStart, today).filter((d) => !isWeekend(d, settings.weekendDays)).length;
   const daysPresent = weekRecords.filter((r) => r.checkIn).length;
   const weekMs = weekRecords.reduce((total, r) => {
     if (!r.checkIn) return total;
@@ -442,31 +439,19 @@ function StaffDashboard({ user, onGoToAttendance }: { user: AuthUser; onGoToAtte
 
 export default function DashboardPage() {
   const { user, loading } = useAuth();
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const router = useRouter();
 
   if (loading || !user) return null;
 
-  const tabs = user.role === "admin" ? ADMIN_NAV_LINKS : STAFF_NAV_LINKS;
-
   return (
     <Layout user={user}>
-      <NavTabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
-
-      {activeTab === "dashboard" && (
-        <>
-          <h1 className="text-xl font-semibold text-slate-800 mb-1">Dashboard</h1>
-          <p className="text-sm text-slate-500 mb-4">{new Date().toDateString()}</p>
-          {user.role === "admin" ? (
-            <AdminDashboard user={user} />
-          ) : (
-            <StaffDashboard user={user} onGoToAttendance={() => setActiveTab("attendance")} />
-          )}
-        </>
+      <h1 className="text-xl font-semibold text-slate-800 mb-1">Dashboard</h1>
+      <p className="text-sm text-slate-500 mb-4">{new Date().toDateString()}</p>
+      {user.role === "admin" ? (
+        <AdminDashboard user={user} />
+      ) : (
+        <StaffDashboard user={user} onGoToAttendance={() => router.push("/attendance")} />
       )}
-      {activeTab === "attendance" && <AttendancePanel user={user} />}
-      {activeTab === "employees" && user.role === "admin" && <EmployeesPanel />}
-      {activeTab === "reports" && <ReportsPanel user={user} />}
-      {activeTab === "login-activity" && user.role === "admin" && <LoginActivityPanel />}
     </Layout>
   );
 }

@@ -1,8 +1,9 @@
 import { userRepository } from "../repositories/user.repository";
 import { employeeRepository } from "../repositories/employee.repository";
 import { loginEventRepository } from "../repositories/loginEvent.repository";
+import { settingsRepository } from "../repositories/settings.repository";
 import { notificationService } from "./notification.service";
-import { hashPassword, verifyPassword, DEFAULT_EMPLOYEE_PASSWORD } from "../utils/password";
+import { hashPassword, verifyPassword } from "../utils/password";
 import { signAuthToken } from "../utils/token";
 import { ApiError } from "../utils/ApiError";
 import type { AuthUser } from "../types";
@@ -52,10 +53,12 @@ async function setPassword(user: AuthUser, newPassword: string) {
   if (typeof newPassword !== "string" || newPassword.length === 0) {
     throw new ApiError(400, "New password is required");
   }
-  if (newPassword.length < 8) {
-    throw new ApiError(400, "Password must be at least 8 characters");
+
+  const { minPasswordLength, defaultEmployeePassword } = await settingsRepository.getLean();
+  if (newPassword.length < minPasswordLength) {
+    throw new ApiError(400, `Password must be at least ${minPasswordLength} characters`);
   }
-  if (newPassword === DEFAULT_EMPLOYEE_PASSWORD) {
+  if (newPassword === defaultEmployeePassword) {
     throw new ApiError(400, "Please choose a password other than the default one.");
   }
 

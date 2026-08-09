@@ -27,14 +27,19 @@ export function formatTime(iso: string | null) {
 /** "Present" is derived (not just whatever the record's own `status` field
  * says) so a long shift with no explicit status still surfaces as an
  * overtime exception, and a checked-in-but-not-out record always reads as
- * "incomplete" regardless of its stored status. */
-export function displayStatus(record: AttendanceRecord | null): DisplayStatus {
+ * "incomplete" regardless of its stored status. `overtimeThresholdMinutes`
+ * defaults to the built-in constant but callers should pass the live value
+ * from Settings (useSettings().settings.overtimeThresholdMinutes). */
+export function displayStatus(
+  record: AttendanceRecord | null,
+  overtimeThresholdMinutes: number = OVERTIME_THRESHOLD_MINUTES
+): DisplayStatus {
   if (!record) return "absent";
   if (record.status === "late") return "late";
   if (record.status === "absent") return "absent";
   if (!record.checkOut) return "incomplete";
   const minutes = durationMinutes(record.checkIn, record.checkOut);
-  if (minutes !== null && minutes > OVERTIME_THRESHOLD_MINUTES) return "overtime";
+  if (minutes !== null && minutes > overtimeThresholdMinutes) return "overtime";
   return "present";
 }
 

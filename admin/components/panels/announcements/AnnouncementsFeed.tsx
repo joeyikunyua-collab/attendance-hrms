@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { addToast } from "@heroui/react";
-import { Pin, Plus, Megaphone, Trash2 } from "lucide-react";
+import { Pin, Plus, Megaphone, Trash2, ChevronRight } from "lucide-react";
 import api from "@/lib/axios";
 import { getErrorMessage } from "@/lib/errors";
 import CategoryBadge from "./CategoryBadge";
 import PostAnnouncementModal from "./PostAnnouncementModal";
+import AnnouncementDialog from "./AnnouncementDialog";
 import type { Announcement, AuthUser } from "@/types";
 
-const BODY_PREVIEW_LENGTH = 160;
+const BODY_PREVIEW_LENGTH = 120;
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -17,14 +18,14 @@ function AnnouncementCard({
   announcement,
   isAdmin,
   onDeleted,
+  onReadMore,
 }: {
   announcement: Announcement;
   isAdmin: boolean;
   onDeleted: () => void;
+  onReadMore: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const isLong = announcement.body.length > BODY_PREVIEW_LENGTH;
-  const displayBody = expanded || !isLong ? announcement.body : `${announcement.body.slice(0, BODY_PREVIEW_LENGTH)}…`;
 
   async function handleDelete() {
     if (!confirm(`Delete "${announcement.title}"?`)) return;
@@ -60,15 +61,22 @@ function AnnouncementCard({
       )}
 
       <CategoryBadge category={announcement.category} />
-      <p className="text-sm font-semibold text-slate-900 mt-2">{announcement.title}</p>
-      <p className="text-sm text-slate-600 mt-1 whitespace-pre-line">{displayBody}</p>
+      <button
+        type="button"
+        onClick={onReadMore}
+        className="block text-left text-sm font-semibold text-slate-900 mt-2 hover:text-blue-600 transition-colors"
+      >
+        {announcement.title}
+      </button>
+      <p className="text-sm text-slate-600 mt-1 line-clamp-3 whitespace-pre-line">{announcement.body}</p>
       {isLong && (
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="text-xs font-medium text-blue-600 hover:underline mt-1"
+          onClick={onReadMore}
+          className="inline-flex items-center gap-0.5 text-xs font-medium text-blue-600 hover:text-blue-700 mt-1"
         >
-          {expanded ? "Show less" : "Read more"}
+          Read More
+          <ChevronRight className="w-3 h-3" />
         </button>
       )}
       <p className="text-[11px] text-slate-400 mt-3">
@@ -82,6 +90,7 @@ export default function AnnouncementsFeed({ user }: { user: AuthUser }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [fetching, setFetching] = useState(true);
   const [showPost, setShowPost] = useState(false);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
   const isAdmin = user.role === "admin";
 
   function load() {
@@ -95,6 +104,11 @@ export default function AnnouncementsFeed({ user }: { user: AuthUser }) {
   useEffect(() => {
     load();
   }, []);
+
+  function handleAcknowledged(updated: Announcement) {
+    setSelectedAnnouncement(updated);
+    setAnnouncements((prev) => prev.map((a) => (a._id === updated._id ? updated : a)));
+  }
 
   return (
     <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm p-4">
@@ -126,12 +140,23 @@ export default function AnnouncementsFeed({ user }: { user: AuthUser }) {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {announcements.map((a) => (
-            <AnnouncementCard key={a._id} announcement={a} isAdmin={isAdmin} onDeleted={load} />
+            <AnnouncementCard
+              key={a._id}
+              announcement={a}
+              isAdmin={isAdmin}
+              onDeleted={load}
+              onReadMore={() => setSelectedAnnouncement(a)}
+            />
           ))}
         </div>
       )}
 
       <PostAnnouncementModal isOpen={showPost} onClose={() => setShowPost(false)} onPosted={load} />
+      <AnnouncementDialog
+        announcement={selectedAnnouncement}
+        onClose={() => setSelectedAnnouncement(null)}
+        onAcknowledged={handleAcknowledged}
+      />
     </div>
   );
 }

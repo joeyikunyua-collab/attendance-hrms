@@ -12,16 +12,21 @@ export function todayStr() {
   return toDateStr(new Date());
 }
 
-export function isWeekend(dateStr: string): boolean {
+export function isWeekend(dateStr: string, weekendDays: number[] = [0, 6]): boolean {
   const day = new Date(`${dateStr}T00:00:00`).getDay();
-  return day === 0 || day === 6;
+  return weekendDays.includes(day);
 }
 
-/** Returns "HH:MM" for the current 30-min check-in reminder slot (9:00..12:00),
- * or null if `now` is outside that window. */
-export function checkInReminderSlot(now: Date): string | null {
+function toMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map((n) => parseInt(n, 10));
+  return h * 60 + m;
+}
+
+/** Returns "HH:MM" for the current 30-min check-in reminder slot within
+ * [start, end], or null if `now` is outside that window. */
+export function checkInReminderSlot(now: Date, start = "09:00", end = "12:00"): string | null {
   const minutes = now.getHours() * 60 + now.getMinutes();
-  if (minutes < 9 * 60 || minutes > 12 * 60) return null;
+  if (minutes < toMinutes(start) || minutes > toMinutes(end)) return null;
   const slotMinutes = Math.floor(minutes / 30) * 30;
   const h = String(Math.floor(slotMinutes / 60)).padStart(2, "0");
   const m = String(slotMinutes % 60).padStart(2, "0");

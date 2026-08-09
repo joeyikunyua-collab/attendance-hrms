@@ -31,7 +31,11 @@ function FormField({
   );
 }
 
-export default function SetPasswordModal({ isOpen }: { isOpen: boolean }) {
+export default function SetPasswordModal({ isOpen, onClose }: { isOpen: boolean; onClose?: () => void }) {
+  // No onClose means this is the mandatory first-login flow (mustChangePassword) -
+  // stays non-dismissable. Passed an onClose (opened voluntarily from Account
+  // Settings) means the user can back out any time.
+  const forced = !onClose;
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -71,16 +75,19 @@ export default function SetPasswordModal({ isOpen }: { isOpen: boolean }) {
   return (
     <Modal
       isOpen={isOpen}
+      onClose={onClose}
       placement="center"
-      isDismissable={false}
-      isKeyboardDismissDisabled
-      hideCloseButton
+      isDismissable={!forced}
+      isKeyboardDismissDisabled={forced}
+      hideCloseButton={forced}
     >
       <ModalContent>
-        <ModalHeader>Set a new password</ModalHeader>
+        <ModalHeader>{forced ? "Set a new password" : "Change your password"}</ModalHeader>
         <ModalBody>
           <p className="text-sm text-slate-500 -mt-2 mb-2">
-            You&apos;re using a temporary password. Please set your own before continuing.
+            {forced
+              ? "You're using a temporary password. Please set your own before continuing."
+              : "Choose a new password for your account."}
           </p>
           <form id="set-password-form" onSubmit={handleSubmit} className="grid grid-cols-1 gap-4">
             <FormField
@@ -99,6 +106,11 @@ export default function SetPasswordModal({ isOpen }: { isOpen: boolean }) {
           </form>
         </ModalBody>
         <ModalFooter>
+          {!forced && (
+            <Button variant="light" onPress={onClose}>
+              Cancel
+            </Button>
+          )}
           <Button color="primary" type="submit" form="set-password-form" isLoading={submitting}>
             Set password
           </Button>

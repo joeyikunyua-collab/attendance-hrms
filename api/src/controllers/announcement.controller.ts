@@ -1,14 +1,19 @@
 import type { Request, Response } from "express";
 import { announcementService } from "../services/announcement.service";
 
-async function list(_req: Request, res: Response) {
-  const announcements = await announcementService.list();
+async function list(req: Request, res: Response) {
+  const announcements = await announcementService.list(req.user!.id);
   res.status(200).json({ announcements });
 }
 
 async function create(req: Request, res: Response) {
   const announcement = await announcementService.create(req.user!, req.body);
   res.status(201).json({ announcement });
+}
+
+async function acknowledge(req: Request, res: Response) {
+  const announcement = await announcementService.acknowledge(req.params.id, req.user!.id);
+  res.status(200).json({ announcement });
 }
 
 async function remove(req: Request, res: Response) {
@@ -19,5 +24,6 @@ async function remove(req: Request, res: Response) {
 export const announcementController = {
   list,
   create,
+  acknowledge,
   remove,
 };

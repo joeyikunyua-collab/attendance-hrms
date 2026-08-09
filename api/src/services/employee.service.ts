@@ -1,8 +1,9 @@
 import { employeeRepository } from "../repositories/employee.repository";
 import { userRepository } from "../repositories/user.repository";
 import { counterRepository } from "../repositories/counter.repository";
+import { settingsRepository } from "../repositories/settings.repository";
 import { notificationService } from "./notification.service";
-import { hashPassword, DEFAULT_EMPLOYEE_PASSWORD } from "../utils/password";
+import { hashPassword } from "../utils/password";
 import { ApiError } from "../utils/ApiError";
 import type { AuthUser } from "../types";
 
@@ -38,6 +39,17 @@ async function generateEmployeeId(): Promise<string> {
  * that would otherwise paper over that. Normalize here so every response
  * is well-formed regardless of when the record was created.
  */
+/** Only enforced once an admin has actually configured a location list in
+ * Settings - before that (e.g. a fresh install), free text is still
+ * accepted so employee creation isn't blocked on a setup step nobody's
+ * reached yet. */
+async function assertValidOfficeLocation(officeLocation: string) {
+  const { officeLocations } = await settingsRepository.getLean();
+  if (officeLocations.length > 0 && !officeLocations.includes(officeLocation)) {
+    throw new ApiError(400, "That office location isn't configured - add it in Settings first");
+  }
+}
+
 function normalize<T extends { active: boolean; status?: string }>(employee: T) {
   return {
     ...employee,
@@ -104,6 +116,7 @@ async function create(
   if (!hireDate || !officeLocation) {
     throw new ApiError(400, "Hire date and office location are required");
   }
+  await assertValidOfficeLocation(officeLocation);
 
   const normalizedRole = role === "admin" ? "admin" : "staff";
   const normalizedEmail = String(workEmail).trim().toLowerCase();
@@ -125,7 +138,8 @@ async function create(
     throw new ApiError(409, "An employee with that work email already exists");
   }
 
-  const passwordHash = await hashPassword(DEFAULT_EMPLOYEE_PASSWORD);
+  const { defaultEmployeePassword } = await settingsRepository.getLean();
+  const passwordHash = await hashPassword(defaultEmployeePassword);
 
   let loginUser;
   try {
@@ -211,7 +225,7 @@ async function create(
 
   return {
     employee,
-    credentials: { username: normalizedEmail, temporaryPassword: DEFAULT_EMPLOYEE_PASSWORD },
+    credentials: { username: normalizedEmail, temporaryPassword: defaultEmployeePassword },
   };
 }
 
@@ -256,6 +270,9 @@ async function update(
 
   if (manager && manager === id) {
     throw new ApiError(400, "An employee can't be their own manager");
+  }
+  if (officeLocation !== undefined && officeLocation) {
+    await assertValidOfficeLocation(officeLocation);
   }
 
   const wasActive = existing.active;

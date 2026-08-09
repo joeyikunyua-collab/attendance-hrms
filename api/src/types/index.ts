@@ -13,4 +13,7 @@ export type NotificationType =
   | "checked_out"
   | "checkin_reminder"
   | "announcement_posted"
-  | "celebration_wish";
+  | "celebration_wish"
+  | "leave_request_submitted"
+  | "leave_request_manager_approved"
+  | "leave_request_reviewed";

@@ -18,6 +18,7 @@ import api from "@/lib/axios";
 import { getErrorMessage } from "@/lib/errors";
 import { employeeRefId, employeeRefName } from "@/lib/employeeRef";
 import { getWeekDates } from "@/lib/dates";
+import { useSettings } from "@/lib/SettingsContext";
 import { dateGroupClass } from "@/components/DateFilterField";
 import { TableSkeletonRows } from "@/components/Skeleton";
 import type { AttendanceRecord, AuthUser, Employee } from "@/types";
@@ -100,6 +101,8 @@ interface DrawerTarget {
 }
 
 export default function AttendanceDashboard({ user, viewToggle }: { user: AuthUser; viewToggle?: ReactNode }) {
+  const { settings } = useSettings();
+  const overtimeThresholdMinutes = settings.overtimeThresholdMinutes;
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [todayRecords, setTodayRecords] = useState<AttendanceRecord[]>([]);
   const [fetchingToday, setFetchingToday] = useState(true);
@@ -232,8 +235,8 @@ export default function AttendanceDashboard({ user, viewToggle }: { user: AuthUs
     [activeEmployees, recordByEmployee]
   );
   const missingCheckouts = useMemo(
-    () => todayRecords.filter((r) => displayStatus(r) === "incomplete").length,
-    [todayRecords]
+    () => todayRecords.filter((r) => displayStatus(r, overtimeThresholdMinutes) === "incomplete").length,
+    [todayRecords, overtimeThresholdMinutes]
   );
 
   const matchesSearchAndDept = (name: string, dept: string) => {
@@ -275,7 +278,7 @@ export default function AttendanceDashboard({ user, viewToggle }: { user: AuthUs
           date: todayStr(),
           record: recordByEmployee.get(e._id) ?? null,
         }))
-        .filter((row) => EXCEPTION_STATUSES.includes(displayStatus(row.record)));
+        .filter((row) => EXCEPTION_STATUSES.includes(displayStatus(row.record, overtimeThresholdMinutes)));
     }
 
     return activeEmployees
@@ -297,7 +300,17 @@ export default function AttendanceDashboard({ user, viewToggle }: { user: AuthUs
           days,
         };
       });
-  }, [view, detailedRecords, activeEmployees, recordByEmployee, weeklyByEmployee, fullWeekDates, search, department]);
+  }, [
+    view,
+    detailedRecords,
+    activeEmployees,
+    recordByEmployee,
+    weeklyByEmployee,
+    fullWeekDates,
+    search,
+    department,
+    overtimeThresholdMinutes,
+  ]);
 
   const isServerPaginated = view === "detailed";
   const visibleRows = isServerPaginated ? rows : rows.slice((clientPage - 1) * PAGE_SIZE, clientPage * PAGE_SIZE);
@@ -346,7 +359,7 @@ export default function AttendanceDashboard({ user, viewToggle }: { user: AuthUs
         formatTime(row.record?.checkIn ?? null),
         formatTime(row.record?.checkOut ?? null),
         formatDuration(row.record?.checkIn ?? null, row.record?.checkOut ?? null),
-        displayStatus(row.record),
+        displayStatus(row.record, overtimeThresholdMinutes),
       ]
         .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
         .join(",")
@@ -658,7 +671,7 @@ export default function AttendanceDashboard({ user, viewToggle }: { user: AuthUs
                     )}
 
                     <td className="px-4 py-3">
-                      <StatusBadge status={displayStatus(row.record)} />
+                      <StatusBadge status={displayStatus(row.record, overtimeThresholdMinutes)} />
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
