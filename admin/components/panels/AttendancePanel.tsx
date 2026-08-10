@@ -1,127 +1,18 @@
-import { useEffect, useState } from "react";
-import { addToast } from "@heroui/react";
+import { useState } from "react";
 import { Skeleton } from "@/components/Skeleton";
 import AdminCalendarView from "@/components/panels/attendance/AdminCalendarView";
 import StaffCalendarView from "@/components/panels/attendance/StaffCalendarView";
 import AttendanceDashboard from "@/components/panels/attendance/dashboard/AttendanceDashboard";
-import api from "@/lib/axios";
-import { getCurrentLocation, getCurrentLocationResult, type GeoCoords, type GeoErrorReason } from "@/lib/geolocation";
-import { getErrorMessage } from "@/lib/errors";
-import type { AttendanceRecord, AuthUser, Employee } from "@/types";
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
+import { useCheckInOut } from "@/lib/useCheckInOut";
+import type { AuthUser } from "@/types";
 
 function formatTime(iso: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-const LOCATION_GUIDANCE: Record<GeoErrorReason, { title: string; description: string }> = {
-  "permission-denied": {
-    title: "Location access blocked",
-    description:
-      "You previously blocked location for this site, so your browser won't ask again automatically. " +
-      "Click the lock/info icon next to the address bar, set Location to \"Allow\", then reload the page and try again.",
-  },
-  timeout: {
-    title: "Location took too long",
-    description:
-      "Couldn't get a location fix in time. Make sure location/GPS is turned on for your device and try again.",
-  },
-  unavailable: {
-    title: "Location unavailable",
-    description:
-      "Your device couldn't determine its location right now. Check your location/GPS settings and try again.",
-  },
-  unsupported: {
-    title: "Location not supported",
-    description: "This browser doesn't support location services, so you can't clock in from here.",
-  },
-};
-
-/**
- * Clock-in requires a location fix so attendance can be tied to a place.
- * Returns null (and shows a toast explaining why, with guidance specific to
- * the failure reason) if a location couldn't be obtained.
- */
-async function requireLocationForCheckIn(): Promise<GeoCoords | null> {
-  const result = await getCurrentLocationResult();
-  if (!result.coords) {
-    addToast({ ...LOCATION_GUIDANCE[result.reason], severity: "warning" });
-    return null;
-  }
-  return result.coords;
-}
-
 function MyAttendanceView() {
-  const [employee, setEmployee] = useState<Employee | null>(null);
-  const [record, setRecord] = useState<AttendanceRecord | null>(null);
-  const [fetching, setFetching] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const date = todayStr();
-
-  function loadData() {
-    setFetching(true);
-    setError(null);
-    Promise.all([
-      api.get<{ employee: Employee }>("/employees/me"),
-      api.get<{ records: AttendanceRecord[] }>("/attendance", { params: { date } }),
-    ])
-      .then(([empRes, attRes]) => {
-        setEmployee(empRes.data.employee);
-        setRecord(attRes.data.records[0] ?? null);
-      })
-      .catch(() => setError("No employee record is linked to this account."))
-      .finally(() => setFetching(false));
-  }
-
-  useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function handleCheckIn() {
-    if (!employee) return;
-    const location = await requireLocationForCheckIn();
-    if (!location) return;
-    try {
-      await api.post("/attendance", { employeeId: employee._id, date, ...location });
-      addToast({
-        title: "Checked in",
-        description: "Your check-in was recorded successfully.",
-        severity: "success",
-      });
-      loadData();
-    } catch (err) {
-      addToast({
-        title: "Check-in failed",
-        description: getErrorMessage(err, "Something went wrong. Please try again."),
-        severity: "danger",
-      });
-    }
-  }
-
-  async function handleCheckOut() {
-    if (!record) return;
-    const location = await getCurrentLocation();
-    try {
-      await api.put(`/attendance/${record._id}`, { action: "checkout", ...location });
-      addToast({
-        title: "Checked out",
-        description: "Your check-out was recorded successfully.",
-        severity: "success",
-      });
-      loadData();
-    } catch (err) {
-      addToast({
-        title: "Check-out failed",
-        description: getErrorMessage(err, "Something went wrong. Please try again."),
-        severity: "danger",
-      });
-    }
-  }
+  const { employee, record, loading: fetching, error, checkIn, checkOut } = useCheckInOut();
 
   if (fetching) {
     return (
@@ -164,14 +55,14 @@ function MyAttendanceView() {
 
       {!record ? (
         <button
-          onClick={handleCheckIn}
+          onClick={checkIn}
           className="w-full bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md px-3 py-2"
         >
           Check in
         </button>
       ) : !record.checkOut ? (
         <button
-          onClick={handleCheckOut}
+          onClick={checkOut}
           className="w-full bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-md px-3 py-2"
         >
           Check out
