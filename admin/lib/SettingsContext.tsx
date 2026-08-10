@@ -1,6 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
+import axios from "axios";
 import api from "@/lib/axios";
 import type { SystemSettings } from "@/types";
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 const FALLBACK_SETTINGS: SystemSettings = {
   companyName: "Attendance System",
@@ -11,6 +16,8 @@ const FALLBACK_SETTINGS: SystemSettings = {
   checkInReminderEnd: "12:00",
   minPasswordLength: 8,
   officeLocations: [],
+  departments: [],
+  employmentTypes: [],
   announcementCategories: [],
   leaveTypes: [],
   leaveApprovalFlow: "admin_only",
@@ -41,14 +48,25 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    try {
-      const res = await api.get<{ settings: SystemSettings }>("/settings");
-      setSettings(res.data.settings);
-    } catch {
-      // Not logged in yet, or request failed - keep the fallback defaults.
-    } finally {
-      setLoading(false);
+    // A single failed attempt used to strand the whole session on
+    // FALLBACK_SETTINGS (e.g. empty leaveTypes) with no way to recover
+    // short of a full page reload - retry transient failures a couple of
+    // times before giving up. A 401 means "not logged in yet" (e.g. still
+    // on /login) rather than a transient error, so that's not worth
+    // retrying - this component remounts fresh once that changes anyway.
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const res = await api.get<{ settings: SystemSettings }>("/settings");
+        setSettings(res.data.settings);
+        break;
+      } catch (err) {
+        const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+        if (status === 401 || attempt === maxAttempts) break;
+        await sleep(attempt * 1000);
+      }
     }
+    setLoading(false);
   }, []);
 
   useEffect(() => {

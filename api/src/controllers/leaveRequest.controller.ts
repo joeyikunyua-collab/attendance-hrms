@@ -23,7 +23,8 @@ async function listForReview(req: Request, res: Response) {
 }
 
 async function balance(req: Request, res: Response) {
-  const balances = await leaveRequestService.balance(req.user!.id);
+  const employeeId = typeof req.query.employeeId === "string" ? req.query.employeeId : undefined;
+  const balances = await leaveRequestService.balance(req.user!, employeeId);
   res.status(200).json({ balances });
 }
 

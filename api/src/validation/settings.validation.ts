@@ -14,6 +14,11 @@ const leaveTypeSchema = z.object({
   paid: z.boolean(),
 });
 
+const employmentTypeSchema = z.object({
+  key: z.string().optional(),
+  label: z.string().min(1, "Employment type name can't be empty"),
+});
+
 export const updateSettingsSchema = z.object({
   companyName: z.string().min(1, "Company name can't be empty").optional(),
   companyLogoUrl: z.string().nullable().optional(),
@@ -24,6 +29,8 @@ export const updateSettingsSchema = z.object({
   defaultEmployeePassword: z.string().min(4, "Must be at least 4 characters").optional(),
   minPasswordLength: z.number().int().min(4, "Must be at least 4").max(128, "Must be at most 128").optional(),
   officeLocations: z.array(z.string().min(1)).optional(),
+  departments: z.array(z.string().min(1)).optional(),
+  employmentTypes: z.array(employmentTypeSchema).min(1, "At least one employment type is required").optional(),
   announcementCategories: z.array(announcementCategorySchema).min(1, "At least one category is required").optional(),
   leaveTypes: z.array(leaveTypeSchema).min(1, "At least one leave type is required").optional(),
   leaveApprovalFlow: z.enum(["admin_only", "manager_only", "manager_then_admin"]).optional(),

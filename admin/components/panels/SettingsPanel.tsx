@@ -1,11 +1,30 @@
 import { useState, useEffect, type FormEvent } from "react";
 import { addToast } from "@heroui/react";
-import { Camera, X, Info, Save, ShieldAlert, Plus, MapPin, Tag, CalendarRange, GitBranch } from "lucide-react";
+import {
+  Camera,
+  X,
+  Info,
+  Save,
+  ShieldAlert,
+  Plus,
+  MapPin,
+  Tag,
+  CalendarRange,
+  GitBranch,
+  Building2,
+  Briefcase,
+} from "lucide-react";
 import api from "@/lib/axios";
 import { getErrorMessage } from "@/lib/errors";
 import { resizeImageToDataUrl } from "@/lib/imageResize";
 import { useSettings } from "@/lib/SettingsContext";
-import type { AnnouncementCategoryConfig, LeaveApprovalFlow, LeaveTypeConfig, SystemSettings } from "@/types";
+import type {
+  AnnouncementCategoryConfig,
+  EmploymentTypeConfig,
+  LeaveApprovalFlow,
+  LeaveTypeConfig,
+  SystemSettings,
+} from "@/types";
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm placeholder:text-slate-400 " +
@@ -195,6 +214,14 @@ export default function SettingsPanel() {
       });
       return;
     }
+    if (form.employmentTypes.length === 0 || form.employmentTypes.some((t) => !t.label.trim())) {
+      addToast({
+        title: "Invalid employment types",
+        description: "Keep at least one employment type, and give each a name.",
+        severity: "danger",
+      });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -208,6 +235,8 @@ export default function SettingsPanel() {
         defaultEmployeePassword: form.defaultEmployeePassword,
         minPasswordLength: form.minPasswordLength,
         officeLocations: form.officeLocations,
+        departments: form.departments,
+        employmentTypes: form.employmentTypes,
         announcementCategories: form.announcementCategories,
         leaveTypes: form.leaveTypes,
         leaveApprovalFlow: form.leaveApprovalFlow,
@@ -403,6 +432,68 @@ export default function SettingsPanel() {
           onChange={(officeLocations) => setForm((f) => ({ ...f, officeLocations }))}
           placeholder="e.g. Nairobi HQ"
         />
+      </SectionCard>
+
+      <SectionCard
+        icon={<Building2 className="w-4 h-4 text-slate-400" />}
+        title="Departments"
+        subtitle="Offered as a dropdown when onboarding or editing an employee."
+      >
+        <TagListEditor
+          values={form.departments}
+          onChange={(departments) => setForm((f) => ({ ...f, departments }))}
+          placeholder="e.g. Engineering"
+        />
+      </SectionCard>
+
+      <SectionCard
+        icon={<Briefcase className="w-4 h-4 text-slate-400" />}
+        title="Employment types"
+        subtitle="Offered as a dropdown when onboarding or editing an employee."
+      >
+        <div className="space-y-2">
+          {form.employmentTypes.map((et, i) => (
+            <div key={et.key || i} className="flex items-center gap-2">
+              <input
+                value={et.label}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    employmentTypes: f.employmentTypes.map((t, ti) => (ti === i ? { ...t, label: e.target.value } : t)),
+                  }))
+                }
+                placeholder="Employment type name"
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  setForm((f) => ({
+                    ...f,
+                    employmentTypes: f.employmentTypes.filter((_, ti) => ti !== i),
+                  }))
+                }
+                className="inline-flex items-center justify-center w-8 h-8 shrink-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                aria-label="Remove employment type"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() =>
+            setForm((f) => ({
+              ...f,
+              employmentTypes: [...f.employmentTypes, { key: "", label: "" } as EmploymentTypeConfig],
+            }))
+          }
+          className="inline-flex items-center gap-1 mt-3 text-xs font-medium text-blue-600 hover:text-blue-700 border border-blue-200 hover:border-blue-300 rounded-lg px-3 py-1.5"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add employment type
+        </button>
       </SectionCard>
 
       <SectionCard

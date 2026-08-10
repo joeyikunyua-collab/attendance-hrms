@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { addToast } from "@heroui/react";
+import axios from "axios";
 import { Plus, CalendarClock, X } from "lucide-react";
 import api from "@/lib/axios";
 import { getErrorMessage } from "@/lib/errors";
@@ -15,18 +16,30 @@ export default function MyRequestsList() {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [fetching, setFetching] = useState(true);
   const [showNew, setShowNew] = useState(false);
+  // Not every login has a linked employee record (e.g. an admin-only seed
+  // account) - GET /leave-requests/mine 403s for those, same as
+  // /employees/me does elsewhere, and there's nothing meaningful to show
+  // (they have no "self" to request leave for), so this hides the whole
+  // card instead of showing an empty list with a submit button that would
+  // always fail.
+  const [noEmployeeRecord, setNoEmployeeRecord] = useState(false);
 
   function load() {
     setFetching(true);
     api
       .get<{ requests: LeaveRequest[] }>("/leave-requests/mine")
       .then((res) => setRequests(res.data.requests))
+      .catch((err) => {
+        if (axios.isAxiosError(err) && err.response?.status === 403) setNoEmployeeRecord(true);
+      })
       .finally(() => setFetching(false));
   }
 
   useEffect(() => {
     load();
   }, []);
+
+  if (noEmployeeRecord) return null;
 
   async function handleCancel(request: LeaveRequest) {
     if (!confirm("Cancel this request?")) return;
@@ -79,7 +92,10 @@ export default function MyRequestsList() {
             ) : (
               requests.map((r) => (
                 <tr key={r._id} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="py-2.5 px-3 text-slate-700">{leaveTypeLabel(r.type, settings.leaveTypes)}</td>
+                  <td className="py-2.5 px-3 text-slate-700">
+                    {leaveTypeLabel(r.type, settings.leaveTypes)}
+                    {r.submittedByAdmin && <p className="text-[11px] text-slate-400">Submitted by admin</p>}
+                  </td>
                   <td className="py-2.5 px-3 text-xs font-mono tabular-nums text-slate-500">
                     {formatDateRange(r.startDate, r.endDate)}
                   </td>

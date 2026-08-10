@@ -12,6 +12,7 @@ export type LeaveRequestStatus = "pending" | "approved" | "rejected" | "cancelle
  * and advanced by leaveRequest.service.review(). Meaningless once the
  * request leaves "pending". */
 export type LeaveApprovalStage = "manager" | "admin" | "done";
+export type LeaveApprovalFlow = "admin_only" | "manager_only" | "manager_then_admin";
 
 export interface LeaveRequestDocument extends mongoose.Document {
   employee: mongoose.Types.ObjectId;
@@ -23,8 +24,17 @@ export interface LeaveRequestDocument extends mongoose.Document {
    * (doesn't exclude weekends/holidays). */
   totalDays: number;
   reason: string;
+  /** Set when an admin submitted this on the employee's behalf (rather than
+   * the employee submitting it themselves) - null otherwise. Purely an
+   * audit trail; it has no effect on the approval flow itself. */
+  submittedByAdmin: mongoose.Types.ObjectId | null;
   status: LeaveRequestStatus;
   approvalStage: LeaveApprovalStage;
+  /** `settings.leaveApprovalFlow` as it was when this request was created -
+   * the manager-approval decision (finalize vs hand off to admin) reads
+   * this instead of the live setting, so an admin changing the flow later
+   * doesn't retroactively change how requests already in flight resolve. */
+  approvalFlowSnapshot: LeaveApprovalFlow;
   /** Populated only when a manager approval step actually happened (i.e.
    * the "manager_then_admin" flow's first stage) - kept separate from
    * reviewedBy/reviewedAt/reviewNote below, which always represent the
@@ -46,8 +56,14 @@ const LeaveRequestSchema = new Schema<LeaveRequestDocument>({
   endDate: { type: Date, required: true },
   totalDays: { type: Number, required: true },
   reason: { type: String, default: "", trim: true },
+  submittedByAdmin: { type: Schema.Types.ObjectId, ref: "User", default: null },
   status: { type: String, enum: ["pending", "approved", "rejected", "cancelled"], default: "pending" },
   approvalStage: { type: String, enum: ["manager", "admin", "done"], default: "admin" },
+  approvalFlowSnapshot: {
+    type: String,
+    enum: ["admin_only", "manager_only", "manager_then_admin"],
+    default: "admin_only",
+  },
   managerDecision: { type: String, enum: ["approved", "rejected"], default: null },
   managerReviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   managerReviewedAt: { type: Date, default: null },

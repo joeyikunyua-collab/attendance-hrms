@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { UserCheck, Check, X as XIcon } from "lucide-react";
+import { UserCheck } from "lucide-react";
 import api from "@/lib/axios";
 import { TableSkeletonRows } from "@/components/Skeleton";
 import { useSettings } from "@/lib/SettingsContext";
 import Avatar from "@/components/panels/attendance/dashboard/Avatar";
-import ReviewRequestModal from "./ReviewRequestModal";
-import { leaveTypeLabel, formatDateRange } from "./leaveTypeLabels";
+import RequestDetailPanel from "./RequestDetailPanel";
+import { leaveTypeLabel, leaveRequestEmployeeName } from "./leaveTypeLabels";
 import type { LeaveRequest } from "@/types";
 
 /** A direct-report approval queue for whoever is listed as someone's
@@ -17,15 +17,18 @@ export default function ManagerApprovalsPanel() {
   const { settings } = useSettings();
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [fetching, setFetching] = useState(true);
-  const [reviewTarget, setReviewTarget] = useState<{ request: LeaveRequest; decision: "approved" | "rejected" } | null>(
-    null
-  );
+  const [selected, setSelected] = useState<LeaveRequest | null>(null);
 
   function load() {
     setFetching(true);
     api
       .get<{ requests: LeaveRequest[] }>("/leave-requests/for-review")
       .then((res) => setRequests(res.data.requests))
+      // Not every login has a linked employee record (e.g. an admin-only
+      // seed account) - this 403s for those, same as GET /employees/me
+      // does elsewhere. There's nothing to review either way, so it's
+      // treated the same as "no pending requests" (renders nothing below).
+      .catch(() => {})
       .finally(() => setFetching(false));
   }
 
@@ -36,77 +39,68 @@ export default function ManagerApprovalsPanel() {
   if (!fetching && requests.length === 0) return null;
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm p-4">
-      <div className="flex items-center gap-2 mb-4">
-        <UserCheck className="w-4 h-4 text-slate-400" />
-        <p className="text-sm font-semibold text-slate-900">My Approvals</p>
-        <span className="text-[11px] text-slate-400">Requests from people who report to you</span>
-      </div>
+    <div className="flex items-start gap-4">
+      <div className={selected ? "w-1/3 min-w-0 shrink-0" : "w-full"}>
+        <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm p-4">
+          <div className="flex items-center gap-2 mb-4">
+            <UserCheck className="w-4 h-4 text-slate-400" />
+            <p className="text-sm font-semibold text-slate-900">My Approvals</p>
+            {!selected && <span className="text-[11px] text-slate-400">Requests from people who report to you</span>}
+          </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50/80 border-b border-slate-200 text-left">
-            <tr>
-              <th className="py-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Employee</th>
-              <th className="py-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Type</th>
-              <th className="py-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Dates</th>
-              <th className="py-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Days</th>
-              <th className="py-2 px-3"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {fetching ? (
-              <TableSkeletonRows columns={5} rows={2} />
-            ) : (
-              requests.map((r) => (
-                <tr key={r._id} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="py-2.5 px-3">
-                    <div className="flex items-center gap-2.5">
-                      <Avatar name={r.employee.name} photoUrl={r.employee.photoUrl} size="sm" />
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-900 truncate">{r.employee.name}</p>
-                        <p className="text-[11px] text-slate-400 truncate">{r.employee.department || "—"}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-2.5 px-3 text-slate-700">{leaveTypeLabel(r.type, settings.leaveTypes)}</td>
-                  <td className="py-2.5 px-3 text-xs font-mono tabular-nums text-slate-500">
-                    {formatDateRange(r.startDate, r.endDate)}
-                  </td>
-                  <td className="py-2.5 px-3 text-slate-600">{r.totalDays}</td>
-                  <td className="py-2.5 px-3 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setReviewTarget({ request: r, decision: "approved" })}
-                        aria-label="Approve"
-                        className="inline-flex items-center justify-center w-7 h-7 rounded-full text-emerald-600 hover:bg-emerald-50"
-                      >
-                        <Check className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setReviewTarget({ request: r, decision: "rejected" })}
-                        aria-label="Reject"
-                        className="inline-flex items-center justify-center w-7 h-7 rounded-full text-rose-600 hover:bg-rose-50"
-                      >
-                        <XIcon className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50/80 border-b border-slate-200 text-left">
+                <tr>
+                  <th className="py-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Employee</th>
+                  <th className="py-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Type</th>
+                  <th className="py-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Days</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {fetching ? (
+                  <TableSkeletonRows columns={3} rows={2} />
+                ) : (
+                  requests.map((r) => (
+                    <tr
+                      key={r._id}
+                      onClick={() => setSelected((prev) => (prev?._id === r._id ? null : r))}
+                      className={`cursor-pointer transition-colors ${
+                        selected?._id === r._id ? "bg-blue-50/80 hover:bg-blue-50" : "hover:bg-slate-50/60"
+                      }`}
+                    >
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center gap-2.5">
+                          <Avatar name={leaveRequestEmployeeName(r.employee)} photoUrl={r.employee?.photoUrl ?? null} size="sm" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-900 truncate">{leaveRequestEmployeeName(r.employee)}</p>
+                            <p className="text-[11px] text-slate-400 truncate">{r.employee?.department || "—"}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-700">{leaveTypeLabel(r.type, settings.leaveTypes)}</td>
+                      <td className="py-2.5 px-3 text-slate-600">{r.totalDays}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
-      <ReviewRequestModal
-        request={reviewTarget?.request ?? null}
-        decision={reviewTarget?.decision ?? null}
-        onClose={() => setReviewTarget(null)}
-        onReviewed={load}
-      />
+      {selected && (
+        <div className="w-2/3 min-w-0">
+          <RequestDetailPanel
+            request={selected}
+            onClose={() => setSelected(null)}
+            onReviewed={() => {
+              load();
+              setSelected(null);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

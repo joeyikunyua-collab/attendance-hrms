@@ -133,7 +133,7 @@ export default function EmployeesPanel() {
   }
 
   function openCreate() {
-    setForm(emptyForm);
+    setForm({ ...emptyForm, employmentType: settings.employmentTypes[0]?.key ?? emptyForm.employmentType });
     setError(null);
     setShowCreate(true);
   }
@@ -519,12 +519,30 @@ export default function EmployeesPanel() {
                     value={form.hireDate}
                     onChange={(v) => updateField("hireDate", v)}
                   />
-                  <FormField
-                    label="Department"
-                    placeholder="Engineering"
-                    value={form.department}
-                    onChange={(v) => updateField("department", v)}
-                  />
+                  {settings.departments.length > 0 ? (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-800 mb-1">Department</label>
+                      <select
+                        value={form.department}
+                        onChange={(e) => updateField("department", e.target.value)}
+                        className={inputClass}
+                      >
+                        <option value="">Select a department...</option>
+                        {settings.departments.map((dept) => (
+                          <option key={dept} value={dept}>
+                            {dept}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <FormField
+                      label="Department"
+                      placeholder="Engineering"
+                      value={form.department}
+                      onChange={(v) => updateField("department", v)}
+                    />
+                  )}
                   <FormField
                     label="Job title"
                     placeholder="Software Engineer"
@@ -608,10 +626,11 @@ export default function EmployeesPanel() {
                       onChange={(e) => updateField("employmentType", e.target.value as EmploymentType)}
                       className={inputClass}
                     >
-                      <option value="full_time">Full-time</option>
-                      <option value="part_time">Part-time</option>
-                      <option value="contract">Contract</option>
-                      <option value="intern">Intern</option>
+                      {settings.employmentTypes.map((et) => (
+                        <option key={et.key} value={et.key}>
+                          {et.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>

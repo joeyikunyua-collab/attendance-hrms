@@ -3,7 +3,9 @@ import { z } from "zod";
 const REQUIRED_MSG = "First name, last name and work email are required";
 const ORG_REQUIRED_MSG = "Hire date and office location are required";
 
-const employmentTypeSchema = z.enum(["full_time", "part_time", "contract", "intern"]);
+// Not a static enum - checked against the admin-configured employment type
+// list at request time (see employeeService.assertValidEmploymentType()).
+const employmentTypeSchema = z.string();
 const employeeStatusSchema = z.enum(["pending_onboarding", "active", "inactive", "suspended"]);
 
 export const createEmployeeSchema = z.object({

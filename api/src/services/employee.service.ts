@@ -3,6 +3,7 @@ import { userRepository } from "../repositories/user.repository";
 import { counterRepository } from "../repositories/counter.repository";
 import { settingsRepository } from "../repositories/settings.repository";
 import { notificationService } from "./notification.service";
+import { leaveRequestService } from "./leaveRequest.service";
 import { hashPassword } from "../utils/password";
 import { ApiError } from "../utils/ApiError";
 import type { AuthUser } from "../types";
@@ -47,6 +48,43 @@ async function assertValidOfficeLocation(officeLocation: string) {
   const { officeLocations } = await settingsRepository.getLean();
   if (officeLocations.length > 0 && !officeLocations.includes(officeLocation)) {
     throw new ApiError(400, "That office location isn't configured - add it in Settings first");
+  }
+}
+
+/** Same "only enforce once configured" behavior as office locations. */
+async function assertValidDepartment(department: string) {
+  const { departments } = await settingsRepository.getLean();
+  if (departments.length > 0 && !departments.includes(department)) {
+    throw new ApiError(400, "That department isn't configured - add it in Settings first");
+  }
+}
+
+/** Unlike office locations/departments, `employmentTypes` always ships with
+ * a non-empty default list, so this is effectively always enforced. */
+async function assertValidEmploymentType(employmentType: string) {
+  const { employmentTypes } = await settingsRepository.getLean();
+  if (employmentTypes.length > 0 && !employmentTypes.some((t) => t.key === employmentType)) {
+    throw new ApiError(400, "That employment type isn't configured - add it in Settings first");
+  }
+}
+
+/** Only the direct "can't be your own manager" case was checked before -
+ * this also rejects a *chain* (A reports to B, B reports to A; or longer),
+ * which the direct check alone can't catch since each individual update
+ * looks fine in isolation. Walks up the proposed manager's own chain,
+ * bounded so a pre-existing bad chain elsewhere in the data can't hang
+ * this request. */
+async function assertNoManagerCycle(employeeId: string, proposedManagerId: string) {
+  let currentId: string | null = proposedManagerId;
+  const seen = new Set<string>();
+  for (let hops = 0; currentId && hops < 50; hops++) {
+    if (currentId === employeeId) {
+      throw new ApiError(400, "That would create a manager cycle - choose a different manager");
+    }
+    if (seen.has(currentId)) break;
+    seen.add(currentId);
+    const record = await employeeRepository.findByIdSelectManager(currentId);
+    currentId = record?.manager ? String(record.manager) : null;
   }
 }
 
@@ -117,6 +155,11 @@ async function create(
     throw new ApiError(400, "Hire date and office location are required");
   }
   await assertValidOfficeLocation(officeLocation);
+  if (department) {
+    await assertValidDepartment(department);
+  }
+  const resolvedEmploymentType = employmentType || "full_time";
+  await assertValidEmploymentType(resolvedEmploymentType);
 
   const normalizedRole = role === "admin" ? "admin" : "staff";
   const normalizedEmail = String(workEmail).trim().toLowerCase();
@@ -183,7 +226,7 @@ async function create(
           hireDate: new Date(hireDate),
           officeLocation: String(officeLocation).trim(),
           manager: manager || null,
-          employmentType: (employmentType as never) || "full_time",
+          employmentType: resolvedEmploymentType as never,
           photoUrl: photoUrl || null,
         } as never);
         break;
@@ -271,11 +314,21 @@ async function update(
   if (manager && manager === id) {
     throw new ApiError(400, "An employee can't be their own manager");
   }
+  if (manager) {
+    await assertNoManagerCycle(id, manager);
+  }
   if (officeLocation !== undefined && officeLocation) {
     await assertValidOfficeLocation(officeLocation);
   }
+  if (department !== undefined && department) {
+    await assertValidDepartment(department);
+  }
+  if (employmentType !== undefined && employmentType) {
+    await assertValidEmploymentType(employmentType);
+  }
 
   const wasActive = existing.active;
+  const previousManagerId = existing.manager ? String(existing.manager) : null;
 
   if (firstName !== undefined) existing.firstName = String(firstName).trim();
   if (middleName !== undefined) existing.middleName = String(middleName).trim();
@@ -328,6 +381,11 @@ async function update(
     await userRepository.incrementTokenVersion(existing.user.toString());
   }
 
+  const newManagerId = existing.manager ? String(existing.manager) : null;
+  if (manager !== undefined && newManagerId !== previousManagerId) {
+    await leaveRequestService.reassignManagerStage(id, newManagerId);
+  }
+
   return existing;
 }
 
@@ -337,12 +395,23 @@ async function celebrations() {
 }
 
 async function remove(id: string) {
+  // Capture direct reports *before* deleting - once clearManagerReferences
+  // runs there's no way to tell who used to report to this person.
+  const directReports = await employeeRepository.findByManager(id);
+
   const employee = await employeeRepository.findByIdAndDelete(id);
   if (!employee) throw new ApiError(404, "Employee not found");
   if (employee.user) {
     await userRepository.findByIdAndDelete(employee.user.toString());
   }
   await employeeRepository.clearManagerReferences(id);
+
+  // Any of their reports' requests waiting on this now-deleted manager
+  // would otherwise sit at approvalStage "manager" forever with nobody
+  // able to act on them - promote those to admin review instead.
+  for (const report of directReports) {
+    await leaveRequestService.reassignManagerStage(String(report._id), null);
+  }
 }
 
 export const employeeService = {

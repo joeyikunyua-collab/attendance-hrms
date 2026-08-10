@@ -18,6 +18,13 @@ export interface LeaveTypeConfig {
   paid: boolean;
 }
 
+/** A configurable employment type - `key` is the immutable identifier
+ * stored on Employee documents; `label` is what's shown. */
+export interface EmploymentTypeConfig {
+  key: string;
+  label: string;
+}
+
 export type LeaveApprovalFlow = "admin_only" | "manager_only" | "manager_then_admin";
 
 /**
@@ -44,6 +51,9 @@ export interface SettingsDocument extends Omit<mongoose.Document, "_id"> {
   minPasswordLength: number;
   /** Selectable office locations, offered on the employee onboarding form. */
   officeLocations: string[];
+  /** Selectable departments, offered on the employee onboarding form. */
+  departments: string[];
+  employmentTypes: EmploymentTypeConfig[];
   announcementCategories: AnnouncementCategoryConfig[];
   leaveTypes: LeaveTypeConfig[];
   /** Who has to sign off on a leave request before it's final - see
@@ -54,6 +64,11 @@ export interface SettingsDocument extends Omit<mongoose.Document, "_id"> {
 }
 
 const AnnouncementCategorySchema = new Schema<AnnouncementCategoryConfig>(
+  { key: { type: String, required: true }, label: { type: String, required: true } },
+  { _id: false }
+);
+
+const EmploymentTypeSchema = new Schema<EmploymentTypeConfig>(
   { key: { type: String, required: true }, label: { type: String, required: true } },
   { _id: false }
 );
@@ -79,6 +94,16 @@ const SettingsSchema = new Schema<SettingsDocument>({
   defaultEmployeePassword: { type: String, default: "Welcome@123" },
   minPasswordLength: { type: Number, default: 8 },
   officeLocations: { type: [String], default: [] },
+  departments: { type: [String], default: [] },
+  employmentTypes: {
+    type: [EmploymentTypeSchema],
+    default: [
+      { key: "full_time", label: "Full-time" },
+      { key: "part_time", label: "Part-time" },
+      { key: "contract", label: "Contract" },
+      { key: "intern", label: "Intern" },
+    ],
+  },
   announcementCategories: {
     type: [AnnouncementCategorySchema],
     default: [

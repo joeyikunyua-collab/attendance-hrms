@@ -62,8 +62,14 @@ async function update(admin: AuthUser, body: Partial<SettingsDocument>) {
   if (body.leaveTypes) {
     normalized.leaveTypes = withStableKeys(body.leaveTypes);
   }
+  if (body.employmentTypes) {
+    normalized.employmentTypes = withStableKeys(body.employmentTypes);
+  }
   if (body.officeLocations) {
     normalized.officeLocations = Array.from(new Set(body.officeLocations.map((l) => l.trim()).filter(Boolean)));
+  }
+  if (body.departments) {
+    normalized.departments = Array.from(new Set(body.departments.map((d) => d.trim()).filter(Boolean)));
   }
 
   const updated = await settingsRepository.update({ ...normalized, updatedBy: admin.id as never });

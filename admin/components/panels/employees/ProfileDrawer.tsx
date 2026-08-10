@@ -3,6 +3,7 @@ import { addToast } from "@heroui/react";
 import { X, Mail, MapPin, CalendarDays, Briefcase, Save } from "lucide-react";
 import api from "@/lib/axios";
 import { getErrorMessage } from "@/lib/errors";
+import { useSettings } from "@/lib/SettingsContext";
 import Avatar from "@/components/panels/attendance/dashboard/Avatar";
 import ComboSelect from "./ComboSelect";
 import EmployeeStatusBadge from "./EmployeeStatusBadge";
@@ -38,6 +39,7 @@ export default function ProfileDrawer({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { settings } = useSettings();
   const [department, setDepartment] = useState("");
   const [designation, setDesignation] = useState("");
   const [role, setRole] = useState<"staff" | "admin">("staff");
@@ -156,7 +158,21 @@ export default function ProfileDrawer({
               <div className="space-y-4">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Edit profile</p>
 
-                <ComboSelect label="Department" value={department} options={departmentOptions} onChange={setDepartment} placeholder="e.g. Engineering" />
+                {settings.departments.length > 0 ? (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-800 mb-1">Department</label>
+                    <select value={department} onChange={(e) => setDepartment(e.target.value)} className={inputClass}>
+                      <option value="">Select a department...</option>
+                      {settings.departments.map((dept) => (
+                        <option key={dept} value={dept}>
+                          {dept}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <ComboSelect label="Department" value={department} options={departmentOptions} onChange={setDepartment} placeholder="e.g. Engineering" />
+                )}
                 <ComboSelect label="Job title" value={designation} options={designationOptions} onChange={setDesignation} placeholder="e.g. Software Engineer" />
 
                 <div>

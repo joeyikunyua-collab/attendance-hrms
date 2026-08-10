@@ -1,5 +1,7 @@
 export type EmployeeStatus = "pending_onboarding" | "active" | "inactive" | "suspended";
-export type EmploymentType = "full_time" | "part_time" | "contract" | "intern";
+/** Free-form key matching one of `SystemSettings.employmentTypes` - not a
+ * fixed union, since admins can add/remove employment types. */
+export type EmploymentType = string;
 
 export interface EmployeeManagerRef {
   _id: string;
@@ -157,17 +159,21 @@ export interface LeaveRequestEmployeeRef {
   name: string;
   employeeId: string;
   department: string;
+  designation: string;
   photoUrl: string | null;
 }
 
 export interface LeaveRequest {
   _id: string;
-  employee: LeaveRequestEmployeeRef;
+  // null if the referenced employee has since been deleted.
+  employee: LeaveRequestEmployeeRef | null;
   type: LeaveType;
   startDate: string;
   endDate: string;
   totalDays: number;
   reason: string;
+  // Set when an admin submitted this on the employee's behalf.
+  submittedByAdmin: string | null;
   status: LeaveRequestStatus;
   approvalStage: LeaveApprovalStage;
   managerDecision: "approved" | "rejected" | null;
@@ -203,6 +209,11 @@ export interface LeaveTypeConfig {
   paid: boolean;
 }
 
+export interface EmploymentTypeConfig {
+  key: string;
+  label: string;
+}
+
 export type LeaveApprovalFlow = "admin_only" | "manager_only" | "manager_then_admin";
 
 /** GET /settings - full shape for admins. Non-admins get the same shape
@@ -217,6 +228,8 @@ export interface SystemSettings {
   defaultEmployeePassword?: string;
   minPasswordLength: number;
   officeLocations: string[];
+  departments: string[];
+  employmentTypes: EmploymentTypeConfig[];
   announcementCategories: AnnouncementCategoryConfig[];
   leaveTypes: LeaveTypeConfig[];
   leaveApprovalFlow: LeaveApprovalFlow;

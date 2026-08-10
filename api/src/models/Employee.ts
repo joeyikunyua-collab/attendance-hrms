@@ -1,7 +1,12 @@
 import mongoose, { Schema, models, model } from "mongoose";
 
 export type EmployeeStatus = "pending_onboarding" | "active" | "inactive" | "suspended";
-export type EmploymentType = "full_time" | "part_time" | "contract" | "intern";
+/** No longer a fixed union - validated at request time against the
+ * admin-configured `settings.employmentTypes` list instead (see
+ * employee.service.ts), so admins can add/remove types without a
+ * migration. Old documents keep whatever key was valid when they were
+ * created even if that type is later removed from Settings. */
+export type EmploymentType = string;
 
 export interface EmployeeDocument extends mongoose.Document {
   employeeId: string;
@@ -50,11 +55,7 @@ const EmployeeSchema = new Schema<EmployeeDocument>({
   hireDate: { type: Date, default: null },
   officeLocation: { type: String, default: "", trim: true },
   manager: { type: Schema.Types.ObjectId, ref: "Employee", default: null },
-  employmentType: {
-    type: String,
-    enum: ["full_time", "part_time", "contract", "intern"],
-    default: "full_time",
-  },
+  employmentType: { type: String, default: "full_time" },
   photoUrl: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });

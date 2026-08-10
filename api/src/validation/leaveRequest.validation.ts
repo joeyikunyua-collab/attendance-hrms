@@ -9,6 +9,9 @@ export const createLeaveRequestSchema = z.object({
   startDate: z.string({ required_error: REQUIRED_MSG }).min(1, REQUIRED_MSG),
   endDate: z.string({ required_error: REQUIRED_MSG }).min(1, REQUIRED_MSG),
   reason: z.string().optional(),
+  // Admin-only - submits on that employee's behalf instead of the caller's
+  // own record. Authorization is enforced in the service, not here.
+  employeeId: z.string().optional(),
 });
 
 export const reviewLeaveRequestSchema = z.object({
